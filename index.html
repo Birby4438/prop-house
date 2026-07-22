@@ -32,7 +32,9 @@
   .pchip .n{display:block;font-family:'IBM Plex Mono';font-size:10px;color:var(--dim);margin-top:1px}
 
   .phead{display:flex;align-items:baseline;gap:10px;margin:4px 0 8px}
-  .phead h2{font-size:16px;font-weight:600}
+  .phead h2{font-size:16px;font-weight:600;cursor:pointer}
+  .phead h2 input{font:inherit;font-weight:600;background:var(--panel);border:1px solid var(--acc);color:var(--ink);
+    border-radius:6px;padding:2px 6px;outline:none;width:180px;max-width:60vw}
   .phead .src{font-family:'IBM Plex Mono';font-size:11px;color:var(--dim)}
   .board-note{color:var(--dim);font-size:12.5px;margin:0 2px 14px}
 
@@ -144,7 +146,7 @@
   <!-- BOARD -->
   <section id="tab-board">
     <div class="roster-chips" id="rosterChips"></div>
-    <div class="phead"><h2 id="pname"></h2><span class="src" id="psrc"></span></div>
+    <div class="phead"><h2 id="pname" onclick="editPname()" title="Click to rename"></h2><span class="src" id="psrc"></span></div>
     <div class="board-note">Lines are set from each player's recent averages once synced — tap a number to override. Max 6 picks per slip.</div>
     <div id="statList"></div>
     <div class="empty hide" id="boardEmpty">No players yet — add Riot IDs in the Roster tab.</div>
@@ -246,6 +248,7 @@ let tickets = [];  // {id, who, stake, picks:[{p,s,line,dir,result,label}], stat
 let actuals = {};  // "playerRiot|statKey" -> value
 let nextId = 1;
 let editingLine = null;
+let editingName = false;
 
 const $ = id => document.getElementById(id);
 const key = (p,s) => roster[p].riot + '|' + s;
@@ -371,18 +374,32 @@ async function syncPlayer(i){
 }
 
 /* ================= board ================= */
+const displayName = r => r.label || r.name;
+
 function renderRoster(){
   $('boardEmpty').classList.toggle('hide', roster.length>0);
   $('rosterChips').innerHTML = roster.map((r,i)=>{
     const n = picks.filter(x=>x.p===i).length;
-    return `<div class="pchip ${i===selected?'on':''}" onclick="selectPlayer(${i})">${esc(r.name)}<span class="n">${n? n+' picked':'&nbsp;'}</span></div>`;
+    return `<div class="pchip ${i===selected?'on':''}" onclick="selectPlayer(${i})">${esc(displayName(r))}<span class="n">${n? n+' picked':'&nbsp;'}</span></div>`;
   }).join('');
-  if(roster[selected]){
-    $('pname').textContent = roster[selected].riot;
-    $('psrc').textContent = roster[selected].matches ? 'avg of last '+roster[selected].matches : 'not synced';
+  const r = roster[selected];
+  if(r){
+    $('pname').innerHTML = editingName
+      ? `<input id="nameEdit" value="${esc(displayName(r))}" onclick="event.stopPropagation()" onblur="saveName()" onkeydown="if(event.key==='Enter')this.blur()">`
+      : esc(displayName(r));
+    $('psrc').textContent = r.riot + ' · ' + (r.matches ? 'avg of last '+r.matches : 'not synced');
+    if(editingName){ const el=$('nameEdit'); if(el){ el.focus(); el.select(); } }
   } else { $('pname').textContent=''; $('psrc').textContent=''; }
 }
 function selectPlayer(i){ selected=i; editingLine=null; renderAll(); }
+function editPname(){ if(!roster[selected] || editingName) return; editingName=true; renderRoster(); }
+function saveName(){
+  const v = $('nameEdit').value.trim();
+  const r = roster[selected];
+  if(r){ if(v) r.label = v; else delete r.label; }
+  editingName = false;
+  pushState(); renderAll();
+}
 
 function renderStats(){
   const r = roster[selected];
@@ -440,7 +457,7 @@ function renderSlip(){
   $('slipForm').classList.toggle('hide', picks.length===0);
   $('slipPicks').innerHTML = picks.map((x,i)=>`
     <div class="pick">
-      <span>${esc(roster[x.p].name)} · ${statLabel(x.s)}
+      <span>${esc(displayName(roster[x.p]))} · ${statLabel(x.s)}
         <span class="d-${x.dir}">${x.dir==='more'?'More':'Less'} ${x.line}</span></span>
       <button class="x" onclick="removePick(${i})">✕</button>
     </div>`).join('');
@@ -457,7 +474,7 @@ function placeSlip(){
   if(!picks.length) return toast('Slip is empty');
   if(!stake || stake<=0) return toast('Enter a stake');
   tickets.push({ id:nextId++, who, stake,
-    picks: picks.map(x=>({...x, riot:roster[x.p].riot, pname:roster[x.p].name, result:null})),
+    picks: picks.map(x=>({...x, riot:roster[x.p].riot, pname:displayName(roster[x.p]), result:null})),
     status:'pending', payout:0 });
   toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+MULT[picks.length]+'x');
   picks = [];
