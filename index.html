@@ -148,7 +148,7 @@
   <section id="tab-board">
     <div class="roster-chips" id="rosterChips"></div>
     <div class="phead"><h2 id="pname" onclick="editPname()" title="Click to rename"></h2><span class="src" id="psrc"></span></div>
-    <div class="board-note">Lines are set from each player's recent averages once synced — tap a number to override. Max 6 picks per slip.</div>
+    <div class="board-note">Lines are set from each player's recent averages once synced — tap a number to override.</div>
     <div id="statList"></div>
     <div class="empty hide" id="boardEmpty">No players yet — add Riot IDs in the Roster tab.</div>
   </section>
@@ -223,7 +223,7 @@ const STATS = [
   {key:'acs',    label:'Avg Combat Score',def:210.5},
 ];
 const MULT = {1:1.5, 2:3, 3:5, 4:10, 5:20, 6:25};
-const MAX_PICKS = 6;
+const multFor = n => MULT[n] !== undefined ? MULT[n] : MULT[6] * Math.pow(2, n-6);   // doubles per pick past the hand-tuned table
 const SYNC_MATCHES = 8;
 const API = 'https://prop-house-proxy.prophouse-birby.workers.dev';
 
@@ -437,7 +437,6 @@ function pick(p, s, dir){
   if(ex && ex.dir===dir){ picks = picks.filter(x=>x!==ex); }
   else if(ex){ ex.dir = dir; }
   else {
-    if(picks.length>=MAX_PICKS) return toast('Max '+MAX_PICKS+' picks per slip');
     picks.push({p, s, line:roster[p].lines[s], dir});
     $('slip').classList.add('open');
   }
@@ -450,7 +449,7 @@ function removePick(i){ picks.splice(i,1); renderAll(); }
 
 function renderSlip(){
   $('slipCount').textContent = picks.length;
-  const m = MULT[picks.length];
+  const m = multFor(picks.length);
   $('slipMult').textContent = picks.length ? (m+'x payout') : '';
   $('slipEmpty').classList.toggle('hide', picks.length>0);
   $('slipForm').classList.toggle('hide', picks.length===0);
@@ -475,7 +474,7 @@ function placeSlip(){
   tickets.push({ id:nextId++, who, stake,
     picks: picks.map(x=>({...x, riot:roster[x.p].riot, pname:displayName(roster[x.p]), result:null})),
     status:'pending', payout:0 });
-  toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+MULT[picks.length]+'x');
+  toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+multFor(picks.length)+'x');
   picks = [];
   $('slip').classList.remove('open');
   pushState(); renderAll();
@@ -502,7 +501,7 @@ function renderTickets(){
       const act = actuals[x.riot+'|'+x.s];
       return `<div class="t-pick">${mk} ${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}${act!==undefined?' <span style="opacity:.7">(got '+(+act).toFixed(1).replace(/\.0$/,'')+')</span>':''}</div>`;
     }).join('');
-    const foot = t.status==='pending' ? `Stake ${t.stake} · ${MULT[t.picks.length]}x if perfect`
+    const foot = t.status==='pending' ? `Stake ${t.stake} · ${multFor(t.picks.length)}x if perfect`
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
       : t.status==='push' ? `Stake ${t.stake} refunded`
       : `Stake ${t.stake} → lost`;
@@ -580,7 +579,7 @@ function gradeAll(){
     if(t.picks.some(x=>x.result==null)) return;
     const wins = t.picks.filter(x=>x.result==='win').length;
     if(wins===0){ t.status='push'; t.payout=t.stake; return; }
-    t.status='won'; t.payout = t.stake * MULT[wins];
+    t.status='won'; t.payout = t.stake * multFor(wins);
   });
   toast('Graded');
   pushState(); renderAll();
