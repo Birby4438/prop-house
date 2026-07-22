@@ -16,6 +16,11 @@ Just open `index.html` in a browser, or serve it:
 python3 -m http.server 8000
 ```
 
+## Architecture
+
+- `index.html` — the app. Calls the HenrikDev API through a proxy (see below) and reads/writes shared state via Firebase Realtime Database.
+- `worker/` — a Cloudflare Worker that proxies requests to the HenrikDev API, attaching the real API key server-side so it's never shipped to the browser. Deployed with `wrangler deploy` from inside `worker/`; the key itself is stored as an encrypted Cloudflare secret (`wrangler secret put HENRIK_KEY`), not in this repo.
+
 ## Notes
 
-- The HenrikDev API key and Firebase config in `index.html` are intentionally client-visible (free tier, low stakes). Firebase database rules are open read/write — fine for a casual friend group, not for anything sensitive.
+- The Firebase config in `index.html` is a public client config (safe by design — Firebase security comes from database rules, not secrecy). Rules are open read/write, which is fine for a casual friend group but not for anything sensitive.

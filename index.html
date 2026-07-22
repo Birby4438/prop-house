@@ -169,10 +169,6 @@
   <!-- ROSTER -->
   <section id="tab-roster" class="hide">
     <div class="field">
-      <label>HenrikDev API key</label>
-      <input id="apiKey" type="password" placeholder="HDEV-...">
-    </div>
-    <div class="field">
       <label>Add player (Riot ID)</label>
       <div class="add-row">
         <input id="newRiot" placeholder="Name#TAG">
@@ -186,7 +182,7 @@
     <div id="rosterList"></div>
     <div class="hint">
       Sync pulls a player's last 8 competitive matches and sets every line at their average, rounded to the nearest .5 — so each pick is roughly a coin flip and the multipliers stay fair.<br><br>
-      A shared HenrikDev API key is already built into this page, so nobody needs to grab their own. Roster, lines, tickets, and standings are synced live across everyone on this site via Firebase — whatever anyone changes, everyone sees.
+      Roster, lines, tickets, and standings are synced live across everyone on this site — whatever anyone changes, everyone sees.
     </div>
   </section>
 </div>
@@ -226,8 +222,7 @@ const STATS = [
 const MULT = {1:1.5, 2:3, 3:5, 4:10, 5:20, 6:25};
 const MAX_PICKS = 6;
 const SYNC_MATCHES = 8;
-const API = 'https://api.henrikdev.xyz';
-const DEFAULT_API_KEY = 'HDEV-fa3ecb40-8a70-4c1e-80ef-f3ce274c7f1e';
+const API = 'https://prop-house-proxy.prophouse-birby.workers.dev';
 
 /* ================= shared realtime state (Firebase) ================= */
 const firebaseConfig = {
@@ -317,9 +312,7 @@ function removePlayer(i){
 
 /* ================= API sync ================= */
 async function hd(path){
-  const k = $('apiKey').value.trim() || DEFAULT_API_KEY;
-  const res = await fetch(API+path, k ? {headers:{'Authorization':k}} : {});
-  if(res.status===401 || res.status===403) throw new Error('API key rejected — check it in Roster');
+  const res = await fetch(API+path);
   if(res.status===404) throw new Error('Player not found — check Riot ID and region');
   if(res.status===429) throw new Error('Rate limited — wait a minute and retry');
   if(!res.ok) throw new Error('API error '+res.status);
@@ -573,7 +566,6 @@ function renderRosterTab(){
 }
 
 function renderAll(){ renderRoster(); renderStats(); renderSlip(); renderTickets(); renderSettle(); renderRosterTab(); }
-$('apiKey').value = DEFAULT_API_KEY;
 renderAll();
 loadSetup();
 </script>
