@@ -17,13 +17,11 @@
   body{background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
   .wrap{max-width:560px;margin:0 auto;padding:24px 16px 150px}
 
-  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:6px}
   .logo{font-family:'Chakra Petch';font-weight:700;font-size:16px;letter-spacing:.1em;text-transform:uppercase}
   .logo span{color:var(--acc)}
   nav a{color:var(--dim);text-decoration:none;font-size:13px;margin-left:13px;cursor:pointer}
   nav a.on{color:var(--ink);border-bottom:2px solid var(--acc);padding-bottom:2px}
-  .match{background:none;border:none;color:var(--dim);font-family:'IBM Plex Mono';font-size:12px;width:100%;outline:none;margin-bottom:20px}
-  .match:focus{color:var(--ink)}
 
   .roster-chips{display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px}
   .pchip{flex:1;min-width:88px;background:var(--panel);border:1px solid var(--edge);color:var(--dim);
@@ -145,7 +143,6 @@
       <a id="nav-board" class="on" onclick="setTab('board')">Board</a><a id="nav-tickets" onclick="setTab('tickets')">Tickets</a><a id="nav-settle" onclick="setTab('settle')">Settle</a><a id="nav-roster" onclick="setTab('roster')">Roster</a>
     </nav>
   </header>
-  <input class="match" id="matchTitle" value="Map 1 — pick your lines" onchange="pushState()">
 
   <!-- BOARD -->
   <section id="tab-board">
@@ -267,7 +264,6 @@ function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
 function pushState(){
   if(!stateLoaded) return;   // don't clobber shared state before the first sync arrives
   stateRef.set({
-    matchTitle: $('matchTitle').value,
     roster, tickets, nextId,
     actualsList: Object.entries(actuals)   // riot IDs contain "#", illegal as a Firebase key — store as pairs instead
   });
@@ -281,7 +277,6 @@ function loadSetup(){
     tickets = Array.isArray(d.tickets) ? d.tickets : [];
     actuals = Object.fromEntries(d.actualsList || []);
     nextId = d.nextId || 1;
-    if(d.matchTitle) $('matchTitle').value = d.matchTitle;
     if(selected>=roster.length) selected = Math.max(0, roster.length-1);
     stateLoaded = true;
     renderAll();
@@ -427,8 +422,9 @@ function renderStats(){
 }
 function editLine(sk){ editingLine=sk; renderStats(); }
 function saveLine(sk){
-  const v = Number($('lineEdit').value);
-  if(!isNaN(v)){
+  const raw = Number($('lineEdit').value);
+  if(!isNaN(raw)){
+    const v = toHalf(raw);   // always end in .5, same as synced lines
     roster[selected].lines[sk]=v;
     const pk = picks.find(x=>x.p===selected && x.s===sk);
     if(pk) pk.line = v;
