@@ -342,12 +342,16 @@ function matchRows(json, r){
 const toHalf = v => Math.round(v - 0.5) + 0.5;   // nearest x.5, never a whole number
 
 async function syncPlayer(i){
-  const r = roster[i];
+  const riot = roster[i].riot, region = roster[i].region, name = roster[i].name, tag = roster[i].tag;
   const btn = $('sync-'+i); if(btn){ btn.disabled=true; btn.textContent='…'; }
   try{
-    const json = await hd('/valorant/v3/matches/'+r.region+'/'+encodeURIComponent(r.name)+'/'+encodeURIComponent(r.tag)+'?mode=competitive&size='+SYNC_MATCHES);
+    const json = await hd('/valorant/v3/matches/'+region+'/'+encodeURIComponent(name)+'/'+encodeURIComponent(tag)+'?mode=competitive&size='+SYNC_MATCHES);
+    // roster may have been reassigned wholesale by a Firebase snapshot while we awaited — re-find by identity, not by stale reference/index
+    const idx = roster.findIndex(x=>x.riot===riot);
+    if(idx<0) return;   // player was removed while syncing
+    const r = roster[idx];
     const rows = matchRows(json, r);
-    if(!rows.length) throw new Error('No recent competitive matches found for '+r.riot);
+    if(!rows.length) throw new Error('No recent competitive matches found for '+riot);
     STATS.forEach(s=>{
       const vals = rows.map(x=>x[s.key]).filter(v=>v!==null && !isNaN(v));
       if(!vals.length) return;
@@ -356,7 +360,7 @@ async function syncPlayer(i){
       r.lines[s.key] = toHalf(avg);
     });
     r.matches = rows.length;
-    toast(r.riot+' synced — lines set from last '+rows.length+' matches');
+    toast(riot+' synced — lines set from last '+rows.length+' matches');
     pushState();
   }catch(e){
     toast(e.message==='Failed to fetch' ? 'Request blocked — open this file directly in your browser' : e.message);
