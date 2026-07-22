@@ -297,7 +297,6 @@ function addPlayer(){
   const riot = $('newRiot').value.trim();
   const region = $('newRegion').value;
   if(!riot.includes('#')) return toast('Riot ID needs the tag — like Name#NA1');
-  if(roster.length>=5) return toast('Roster is full (5 players)');
   const [name, tag] = [riot.slice(0, riot.lastIndexOf('#')), riot.slice(riot.lastIndexOf('#')+1)];
   if(roster.some(r=>r.riot.toLowerCase()===riot.toLowerCase())) return toast('Already on the roster');
   roster.push({riot, name, tag, region, lines:fresh(), avg:{}, matches:0});
