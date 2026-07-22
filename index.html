@@ -487,12 +487,15 @@ function placeSlip(){
 }
 
 /* ================= tickets ================= */
-function cancelTicket(id){
+function removeTicket(id){
   const t = tickets.find(x=>x.id===id);
-  if(!t || t.status!=='pending') return;
-  if(!confirm('Cancel '+t.who+"'s "+t.picks.length+'-pick slip (stake '+t.stake+')?')) return;
+  if(!t) return;
+  const msg = t.status==='pending'
+    ? 'Cancel '+t.who+"'s "+t.picks.length+'-pick slip (stake '+t.stake+')?'
+    : 'Delete '+t.who+"'s settled "+t.picks.length+'-pick slip? This also removes it from the standings.';
+  if(!confirm(msg)) return;
   tickets = tickets.filter(x=>x.id!==id);
-  toast('Slip cancelled');
+  toast(t.status==='pending' ? 'Slip cancelled' : 'Slip deleted');
   pushState(); renderAll();
 }
 function renderTickets(){
@@ -508,10 +511,10 @@ function renderTickets(){
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
       : t.status==='push' ? `Stake ${t.stake} refunded`
       : `Stake ${t.stake} → lost`;
-    const cancelBtn = t.status==='pending' ? `<button class="t-cancel" onclick="cancelTicket(${t.id})">Cancel</button>` : '';
+    const actionBtn = `<button class="t-cancel" onclick="removeTicket(${t.id})">${t.status==='pending'?'Cancel':'Delete'}</button>`;
     return `<div class="ticket">
       <div class="t-head"><span class="who">${esc(t.who)} · ${t.picks.length}-pick</span><span class="t-tag ${tag}">${t.status}</span></div>
-      ${rows}<div class="t-foot"><span>${foot}</span>${cancelBtn}</div></div>`;
+      ${rows}<div class="t-foot"><span>${foot}</span>${actionBtn}</div></div>`;
   }).join('');
 
   const net = {};
