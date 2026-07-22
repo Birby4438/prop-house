@@ -15,7 +15,7 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
-  .wrap{max-width:560px;margin:0 auto;padding:24px 16px 150px}
+  .wrap{max-width:560px;margin:0 auto;padding:24px 16px 90px}
 
   header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:6px}
   .logo{font-family:'Chakra Petch';font-weight:700;font-size:16px;letter-spacing:.1em;text-transform:uppercase}
@@ -49,14 +49,27 @@
   .dir.on-more{background:rgba(61,220,151,.12);border-color:var(--more);color:var(--more)}
   .dir.on-less{background:rgba(255,89,100,.12);border-color:var(--less);color:var(--less)}
 
-  .slip{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--edge)}
-  .slip-inner{max-width:560px;margin:0 auto;padding:12px 16px}
-  .slip-top{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+  .slip-tab{position:fixed;right:16px;bottom:20px;z-index:50;background:var(--acc);color:#0F1114;
+    border:none;border-radius:24px;padding:12px 18px;font-weight:600;font-size:13px;cursor:pointer;
+    box-shadow:0 4px 16px rgba(0,0,0,.4);display:flex;align-items:center;gap:6px}
+  .slip-tab.hide{display:none}
+  .slip-tab .n{font-family:'IBM Plex Mono'}
+  .slip-tab .m{font-family:'IBM Plex Mono';opacity:.75;font-weight:500}
+  .slip-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:55;opacity:0;pointer-events:none;transition:opacity .2s}
+  .slip-backdrop.show{opacity:1;pointer-events:auto}
+  .slip{position:fixed;top:0;right:0;bottom:0;width:360px;max-width:90vw;background:var(--panel);
+    border-left:1px solid var(--edge);box-shadow:-8px 0 24px rgba(0,0,0,.4);z-index:60;
+    transform:translateX(100%);transition:transform .25s ease;display:flex}
+  .slip.open{transform:translateX(0)}
+  .slip-inner{padding:16px;overflow-y:auto;width:100%}
+  .slip-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
   .slip-top .cnt{font-weight:600}
   .slip-top .cnt b{color:var(--acc)}
   .mult{font-family:'IBM Plex Mono';font-size:13px;color:var(--acc)}
-  .slip-body{display:none;padding-top:10px}
-  .slip.open .slip-body{display:block}
+  .slip-close{background:none;border:1px solid var(--edge);color:var(--dim);border-radius:7px;
+    width:30px;height:30px;flex:none;cursor:pointer;font-size:14px}
+  .slip-close:hover{color:var(--ink);border-color:var(--acc)}
+  .slip-body{padding-top:10px}
   .pick{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--edge);font-size:13px}
   .pick .d-more{color:var(--more);font-weight:600}
   .pick .d-less{color:var(--less);font-weight:600}
@@ -191,11 +204,16 @@
 </div>
 
 <!-- SLIP -->
+<button class="slip-tab hide" id="slipTab" onclick="toggleSlip()">
+  <span class="n"><b id="slipTabCount">0</b> picks</span><span class="m" id="slipTabMult"></span>
+</button>
+<div class="slip-backdrop" id="slipBackdrop" onclick="toggleSlip()"></div>
 <div class="slip" id="slip">
   <div class="slip-inner">
-    <div class="slip-top" onclick="toggleSlip()">
+    <div class="slip-top">
       <span class="cnt">Slip · <b id="slipCount">0</b> picks</span>
       <span class="mult" id="slipMult"></span>
+      <button class="slip-close" onclick="toggleSlip()" title="Minimize">✕</button>
     </div>
     <div class="slip-body">
       <div id="slipPicks"></div>
@@ -437,19 +455,22 @@ function pick(p, s, dir){
   if(ex && ex.dir===dir){ picks = picks.filter(x=>x!==ex); }
   else if(ex){ ex.dir = dir; }
   else {
+    const wasEmpty = picks.length===0;
     picks.push({p, s, line:roster[p].lines[s], dir});
-    $('slip').classList.add('open');
+    if(wasEmpty) openSlip();   // peek open on the first pick only — don't keep blocking the board on every add
   }
   renderAll();
 }
 
 /* ================= slip ================= */
-function toggleSlip(){ $('slip').classList.toggle('open'); }
+function openSlip(){ $('slip').classList.add('open'); $('slipBackdrop').classList.add('show'); }
+function closeSlip(){ $('slip').classList.remove('open'); $('slipBackdrop').classList.remove('show'); }
+function toggleSlip(){ $('slip').classList.contains('open') ? closeSlip() : openSlip(); }
 function removePick(i){ picks.splice(i,1); renderAll(); }
 
 function renderSlip(){
   $('slipCount').textContent = picks.length;
-  const m = multFor(picks.length);
+  const m = picks.length ? multFor(picks.length) : 0;
   $('slipMult').textContent = picks.length ? (m+'x payout') : '';
   $('slipEmpty').classList.toggle('hide', picks.length>0);
   $('slipForm').classList.toggle('hide', picks.length===0);
@@ -463,6 +484,11 @@ function renderSlip(){
   $('toWin').classList.toggle('hide', picks.length===0);
   if(picks.length) $('toWin').innerHTML =
     `${picks.length} pick${picks.length>1?'s':''} · stake ${stake} → pays <b>${(stake*m).toFixed(0)}</b> if it hits`;
+
+  $('slipTab').classList.toggle('hide', picks.length===0);
+  $('slipTabCount').textContent = picks.length;
+  $('slipTabMult').textContent = picks.length ? m+'x' : '';
+  if(!picks.length) closeSlip();
 }
 
 function placeSlip(){
@@ -476,7 +502,7 @@ function placeSlip(){
     status:'pending', payout:0 });
   toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+multFor(picks.length)+'x');
   picks = [];
-  $('slip').classList.remove('open');
+  closeSlip();
   pushState(); renderAll();
 }
 
