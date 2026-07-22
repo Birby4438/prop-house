@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PropHouse</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --bg:#0F1114; --panel:#16191E; --edge:#23272E;
+    --ink:#E8EBEF; --dim:#7C8492;
+    --acc:#FFB01F; --more:#3DDC97; --less:#FF5964;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;font-size:14px}
+  .wrap{max-width:560px;margin:0 auto;padding:24px 16px 150px}
+
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px}
+  .logo{font-family:'Chakra Petch';font-weight:700;font-size:16px;letter-spacing:.1em;text-transform:uppercase}
+  .logo span{color:var(--acc)}
+  nav a{color:var(--dim);text-decoration:none;font-size:13px;margin-left:13px;cursor:pointer}
+  nav a.on{color:var(--ink);border-bottom:2px solid var(--acc);padding-bottom:2px}
+  .match{background:none;border:none;color:var(--dim);font-family:'IBM Plex Mono';font-size:12px;width:100%;outline:none;margin-bottom:20px}
+  .match:focus{color:var(--ink)}
+
+  .roster-chips{display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px}
+  .pchip{flex:1;min-width:88px;background:var(--panel);border:1px solid var(--edge);color:var(--dim);
+    padding:9px 6px;border-radius:8px;cursor:pointer;text-align:center;font-size:13px;font-weight:500;white-space:nowrap}
+  .pchip.on{color:var(--ink);border-color:var(--acc)}
+  .pchip .n{display:block;font-family:'IBM Plex Mono';font-size:10px;color:var(--dim);margin-top:1px}
+
+  .phead{display:flex;align-items:baseline;gap:10px;margin:4px 0 8px}
+  .phead h2{font-size:16px;font-weight:600}
+  .phead .src{font-family:'IBM Plex Mono';font-size:11px;color:var(--dim)}
+  .board-note{color:var(--dim);font-size:12.5px;margin:0 2px 14px}
+
+  .stat{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--edge);
+    border-radius:10px;padding:10px 12px;margin-bottom:8px}
+  .stat .name{flex:1;font-weight:500}
+  .stat .name .avg{display:block;font-family:'IBM Plex Mono';font-size:10.5px;color:var(--dim);font-weight:400}
+  .stat .line{font-family:'IBM Plex Mono';color:var(--ink);width:60px;text-align:right;cursor:pointer}
+  .stat .line input{width:60px;background:var(--bg);border:1px solid var(--edge);color:var(--ink);
+    font-family:'IBM Plex Mono';font-size:13px;padding:3px 4px;border-radius:5px;text-align:right;outline:none}
+  .dir{width:60px;padding:8px 0;border-radius:8px;border:1px solid var(--edge);background:none;
+    color:var(--dim);cursor:pointer;font-size:12px;font-weight:600}
+  .dir:hover{color:var(--ink)}
+  .dir.on-more{background:rgba(61,220,151,.12);border-color:var(--more);color:var(--more)}
+  .dir.on-less{background:rgba(255,89,100,.12);border-color:var(--less);color:var(--less)}
+
+  .slip{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--edge)}
+  .slip-inner{max-width:560px;margin:0 auto;padding:12px 16px}
+  .slip-top{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+  .slip-top .cnt{font-weight:600}
+  .slip-top .cnt b{color:var(--acc)}
+  .mult{font-family:'IBM Plex Mono';font-size:13px;color:var(--acc)}
+  .slip-body{display:none;padding-top:10px}
+  .slip.open .slip-body{display:block}
+  .pick{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--edge);font-size:13px}
+  .pick .d-more{color:var(--more);font-weight:600}
+  .pick .d-less{color:var(--less);font-weight:600}
+  .pick .x{background:none;border:none;color:var(--dim);cursor:pointer;font-size:15px}
+  .slip-row{display:flex;gap:8px;margin-top:12px;align-items:center}
+  .slip-row input{flex:1;background:var(--bg);border:1px solid var(--edge);color:var(--ink);
+    border-radius:8px;padding:9px 10px;font-size:14px;outline:none;min-width:0}
+  .slip-row input:focus{border-color:var(--acc)}
+  .btn{background:var(--acc);border:none;color:#0F1114;font-weight:600;font-size:14px;
+    padding:10px 18px;border-radius:8px;cursor:pointer;white-space:nowrap}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn-ghost{background:none;border:1px solid var(--edge);color:var(--ink)}
+  .to-win{font-family:'IBM Plex Mono';font-size:12px;color:var(--dim);margin-top:8px}
+  .to-win b{color:var(--more)}
+
+  .ticket{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .t-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .t-head .who{font-weight:600}
+  .t-tag{font-family:'IBM Plex Mono';font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:2px 8px;border-radius:4px}
+  .t-pending{color:var(--acc);border:1px solid var(--acc)}
+  .t-won{background:var(--more);color:#0F1114}
+  .t-lost{background:var(--less);color:#fff}
+  .t-push{color:var(--dim);border:1px solid var(--dim)}
+  .t-pick{font-size:12.5px;color:var(--dim);padding:2px 0}
+  .t-pick .w{color:var(--more)}.t-pick .l{color:var(--less)}.t-pick .p{color:var(--dim)}
+  .t-foot{font-family:'IBM Plex Mono';font-size:12px;margin-top:6px;color:var(--dim)}
+  .t-foot b{color:var(--more)}
+
+  .empty{color:var(--dim);font-family:'IBM Plex Mono';font-size:12.5px;text-align:center;padding:28px 0}
+
+  .s-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--edge);
+    border-radius:10px;padding:10px 12px;margin-bottom:8px}
+  .s-row .lbl{flex:1;font-size:13px}
+  .s-row .lbl span{color:var(--dim);font-family:'IBM Plex Mono';font-size:11.5px}
+  .s-row input{width:78px;background:var(--bg);border:1px solid var(--edge);color:var(--ink);
+    font-family:'IBM Plex Mono';padding:7px 8px;border-radius:6px;text-align:right;outline:none}
+  .s-row input:focus{border-color:var(--acc)}
+  .settle-actions{display:flex;gap:8px;margin-top:6px}
+
+  .standings{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .st-chip{font-family:'IBM Plex Mono';font-size:12px;background:var(--panel);border:1px solid var(--edge);
+    border-radius:8px;padding:6px 10px}
+  .st-chip .pos{color:var(--more)} .st-chip .neg{color:var(--less)}
+
+  /* roster tab */
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+  .field input,.field select{width:100%;background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+    border-radius:8px;padding:9px 10px;font-size:14px;outline:none;font-family:'IBM Plex Mono'}
+  .field input:focus,.field select:focus{border-color:var(--acc)}
+  .r-row{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--edge);
+    border-radius:10px;padding:10px 12px;margin-bottom:8px}
+  .r-row .r-name{flex:1;min-width:0}
+  .r-row .r-name b{display:block;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .r-row .r-name span{font-family:'IBM Plex Mono';font-size:11px;color:var(--dim)}
+  .r-row .mini{background:none;border:1px solid var(--edge);color:var(--ink);border-radius:7px;
+    padding:6px 10px;font-size:12px;cursor:pointer}
+  .r-row .mini:hover{border-color:var(--acc)}
+  .r-row .mini:disabled{opacity:.4;cursor:wait}
+  .add-row{display:flex;gap:8px}
+  .add-row input{flex:2;min-width:0}
+  .add-row select{flex:1}
+  .add-row input,.add-row select{background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+    border-radius:8px;padding:9px 10px;font-size:13px;outline:none;font-family:'IBM Plex Mono'}
+  .hint{color:var(--dim);font-size:12px;line-height:1.55;margin-top:14px}
+  .hint a{color:var(--acc)}
+
+  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;background:var(--panel);
+    border:1px solid var(--acc);font-family:'IBM Plex Mono';font-size:12.5px;padding:9px 16px;border-radius:8px;
+    opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw;text-align:center}
+  .toast.show{opacity:1}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">Prop<span>House</span></div>
+    <nav>
+      <a id="nav-board" class="on" onclick="setTab('board')">Board</a><a id="nav-tickets" onclick="setTab('tickets')">Tickets</a><a id="nav-settle" onclick="setTab('settle')">Settle</a><a id="nav-roster" onclick="setTab('roster')">Roster</a>
+    </nav>
+  </header>
+  <input class="match" id="matchTitle" value="Map 1 — pick your lines" onchange="pushState()">
+
+  <!-- BOARD -->
+  <section id="tab-board">
+    <div class="roster-chips" id="rosterChips"></div>
+    <div class="phead"><h2 id="pname"></h2><span class="src" id="psrc"></span></div>
+    <div class="board-note">Lines are set from each player's recent averages once synced — tap a number to override. Max 6 picks per slip.</div>
+    <div id="statList"></div>
+    <div class="empty hide" id="boardEmpty">No players yet — add Riot IDs in the Roster tab.</div>
+  </section>
+
+  <!-- TICKETS -->
+  <section id="tab-tickets" class="hide">
+    <div class="standings" id="standings"></div>
+    <div id="ticketList"></div>
+  </section>
+
+  <!-- SETTLE -->
+  <section id="tab-settle" class="hide">
+    <div class="board-note">Pull finals straight from each player's most recent match, or type them in. Exact hits push — the pick drops and the multiplier adjusts.</div>
+    <div id="settleList"></div>
+    <div class="settle-actions hide" id="settleActions">
+      <button class="btn btn-ghost" id="autofillBtn" onclick="autofill()">Pull last match</button>
+      <button class="btn" onclick="gradeAll()">Grade tickets</button>
+    </div>
+  </section>
+
+  <!-- ROSTER -->
+  <section id="tab-roster" class="hide">
+    <div class="field">
+      <label>HenrikDev API key</label>
+      <input id="apiKey" type="password" placeholder="HDEV-...">
+    </div>
+    <div class="field">
+      <label>Add player (Riot ID)</label>
+      <div class="add-row">
+        <input id="newRiot" placeholder="Name#TAG">
+        <select id="newRegion">
+          <option value="na">NA</option><option value="eu">EU</option><option value="ap">AP</option>
+          <option value="kr">KR</option><option value="latam">LATAM</option><option value="br">BR</option>
+        </select>
+        <button class="btn" onclick="addPlayer()">Add</button>
+      </div>
+    </div>
+    <div id="rosterList"></div>
+    <div class="hint">
+      Sync pulls a player's last 8 competitive matches and sets every line at their average, rounded to the nearest .5 — so each pick is roughly a coin flip and the multipliers stay fair.<br><br>
+      A shared HenrikDev API key is already built into this page, so nobody needs to grab their own. Roster, lines, tickets, and standings are synced live across everyone on this site via Firebase — whatever anyone changes, everyone sees.
+    </div>
+  </section>
+</div>
+
+<!-- SLIP -->
+<div class="slip" id="slip">
+  <div class="slip-inner">
+    <div class="slip-top" onclick="toggleSlip()">
+      <span class="cnt">Slip · <b id="slipCount">0</b> picks</span>
+      <span class="mult" id="slipMult"></span>
+    </div>
+    <div class="slip-body">
+      <div id="slipPicks"></div>
+      <div class="empty hide" id="slipEmpty">Pick More or Less on any line.</div>
+      <div class="slip-row" id="slipForm">
+        <input id="who" placeholder="Your name" value="Alex">
+        <input id="stake" type="number" value="50" min="1" style="max-width:90px" oninput="renderSlip()">
+        <button class="btn" onclick="placeSlip()">Place</button>
+      </div>
+      <div class="to-win" id="toWin"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= config ================= */
+const STATS = [
+  {key:'kills',  label:'Kills',           def:15.5},
+  {key:'deaths', label:'Deaths',          def:13.5},
+  {key:'assists',label:'Assists',         def:4.5},
+  {key:'ka',     label:'Kills + Assists', def:20.5},
+  {key:'hs',     label:'Headshot %',      def:24.5},
+  {key:'acs',    label:'Avg Combat Score',def:210.5},
+];
+const MULT = {1:1.5, 2:3, 3:5, 4:10, 5:20, 6:25};
+const MAX_PICKS = 6;
+const SYNC_MATCHES = 8;
+const API = 'https://api.henrikdev.xyz';
+const DEFAULT_API_KEY = 'HDEV-fa3ecb40-8a70-4c1e-80ef-f3ce274c7f1e';
+
+/* ================= shared realtime state (Firebase) ================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyDyf25llLI15cyyEuvVkHq2s34qMA_c1ug",
+  authDomain: "prop-house.firebaseapp.com",
+  databaseURL: "https://prop-house-default-rtdb.firebaseio.com",
+  projectId: "prop-house",
+  storageBucket: "prop-house.firebasestorage.app",
+  messagingSenderId: "598485972069",
+  appId: "1:598485972069:web:a782f65785542e7f4bc28c"
+};
+firebase.initializeApp(firebaseConfig);
+const stateRef = firebase.database().ref('prophouse');
+let stateLoaded = false;
+
+/* ================= state ================= */
+let roster = [];   // {riot:'Name#TAG', name, tag, region, lines:{}, avg:{}, matches:0}
+let selected = 0;
+let picks = [];    // {p, s, line, dir}
+let tickets = [];  // {id, who, stake, picks:[{p,s,line,dir,result,label}], status, payout}
+let actuals = {};  // "playerRiot|statKey" -> value
+let nextId = 1;
+let editingLine = null;
+
+const $ = id => document.getElementById(id);
+const key = (p,s) => roster[p].riot + '|' + s;
+const statLabel = s => STATS.find(x=>x.key===s).label;
+const fresh = () => Object.fromEntries(STATS.map(s=>[s.key, s.def]));
+
+let toastTimer;
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2800); }
+
+/* ================= persistence (shared, live, via Firebase) ================= */
+function pushState(){
+  if(!stateLoaded) return;   // don't clobber shared state before the first sync arrives
+  stateRef.set({
+    matchTitle: $('matchTitle').value,
+    roster, tickets, nextId,
+    actualsList: Object.entries(actuals)   // riot IDs contain "#", illegal as a Firebase key — store as pairs instead
+  });
+}
+function loadSetup(){
+  stateRef.on('value', snap=>{
+    const d = snap.val() || {};
+    roster = Array.isArray(d.roster) ? d.roster : [];
+    tickets = Array.isArray(d.tickets) ? d.tickets : [];
+    actuals = Object.fromEntries(d.actualsList || []);
+    nextId = d.nextId || 1;
+    if(d.matchTitle) $('matchTitle').value = d.matchTitle;
+    if(selected>=roster.length) selected = Math.max(0, roster.length-1);
+    stateLoaded = true;
+    renderAll();
+  });
+}
+
+/* ================= tabs ================= */
+function setTab(name){
+  ['board','tickets','settle','roster'].forEach(t=>{
+    $('tab-'+t).classList.toggle('hide', t!==name);
+    $('nav-'+t).classList.toggle('on', t===name);
+  });
+  renderAll();
+}
+
+/* ================= roster ================= */
+function addPlayer(){
+  const riot = $('newRiot').value.trim();
+  const region = $('newRegion').value;
+  if(!riot.includes('#')) return toast('Riot ID needs the tag — like Name#NA1');
+  if(roster.length>=5) return toast('Roster is full (5 players)');
+  const [name, tag] = [riot.slice(0, riot.lastIndexOf('#')), riot.slice(riot.lastIndexOf('#')+1)];
+  if(roster.some(r=>r.riot.toLowerCase()===riot.toLowerCase())) return toast('Already on the roster');
+  roster.push({riot, name, tag, region, lines:fresh(), avg:{}, matches:0});
+  $('newRiot').value='';
+  pushState(); renderAll();
+  syncPlayer(roster.length-1);   // auto-sync on add
+}
+function removePlayer(i){
+  const gone = roster[i].riot;
+  roster.splice(i,1);
+  picks = picks.filter(x=>x.p!==i).map(x=>({...x, p: x.p>i ? x.p-1 : x.p}));
+  if(selected>=roster.length) selected = Math.max(0, roster.length-1);
+  toast(gone+' removed');
+  pushState(); renderAll();
+}
+
+/* ================= API sync ================= */
+async function hd(path){
+  const k = $('apiKey').value.trim() || DEFAULT_API_KEY;
+  const res = await fetch(API+path, k ? {headers:{'Authorization':k}} : {});
+  if(res.status===401 || res.status===403) throw new Error('API key rejected — check it in Roster');
+  if(res.status===404) throw new Error('Player not found — check Riot ID and region');
+  if(res.status===429) throw new Error('Rate limited — wait a minute and retry');
+  if(!res.ok) throw new Error('API error '+res.status);
+  return res.json();
+}
+
+function matchRows(json, r){
+  // pull this player's stat lines out of a v3 matchlist response
+  const rows = [];
+  (json.data||[]).forEach(m=>{
+    const rounds = m.metadata && m.metadata.rounds_played;
+    const me = ((m.players||{}).all_players||[]).find(p=>
+      p.name && p.name.toLowerCase()===r.name.toLowerCase() && p.tag && p.tag.toLowerCase()===r.tag.toLowerCase());
+    if(!me || !me.stats || !rounds) return;
+    const st = me.stats;
+    const shots = (st.headshots||0)+(st.bodyshots||0)+(st.legshots||0);
+    rows.push({
+      kills: st.kills||0, deaths: st.deaths||0, assists: st.assists||0,
+      ka: (st.kills||0)+(st.assists||0),
+      hs: shots ? (st.headshots||0)/shots*100 : null,
+      acs: rounds ? (st.score||0)/rounds : null,
+    });
+  });
+  return rows;
+}
+
+const toHalf = v => Math.round(v - 0.5) + 0.5;   // nearest x.5, never a whole number
+
+async function syncPlayer(i){
+  const r = roster[i];
+  const btn = $('sync-'+i); if(btn){ btn.disabled=true; btn.textContent='…'; }
+  try{
+    const json = await hd('/valorant/v3/matches/'+r.region+'/'+encodeURIComponent(r.name)+'/'+encodeURIComponent(r.tag)+'?mode=competitive&size='+SYNC_MATCHES);
+    const rows = matchRows(json, r);
+    if(!rows.length) throw new Error('No recent competitive matches found for '+r.riot);
+    STATS.forEach(s=>{
+      const vals = rows.map(x=>x[s.key]).filter(v=>v!==null && !isNaN(v));
+      if(!vals.length) return;
+      const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+      r.avg[s.key] = avg;
+      r.lines[s.key] = toHalf(avg);
+    });
+    r.matches = rows.length;
+    toast(r.riot+' synced — lines set from last '+rows.length+' matches');
+    pushState();
+  }catch(e){
+    toast(e.message==='Failed to fetch' ? 'Request blocked — open this file directly in your browser' : e.message);
+  }
+  renderAll();
+}
+
+/* ================= board ================= */
+function renderRoster(){
+  $('boardEmpty').classList.toggle('hide', roster.length>0);
+  $('rosterChips').innerHTML = roster.map((r,i)=>{
+    const n = picks.filter(x=>x.p===i).length;
+    return `<div class="pchip ${i===selected?'on':''}" onclick="selectPlayer(${i})">${esc(r.name)}<span class="n">${n? n+' picked':'&nbsp;'}</span></div>`;
+  }).join('');
+  if(roster[selected]){
+    $('pname').textContent = roster[selected].riot;
+    $('psrc').textContent = roster[selected].matches ? 'avg of last '+roster[selected].matches : 'not synced';
+  } else { $('pname').textContent=''; $('psrc').textContent=''; }
+}
+function selectPlayer(i){ selected=i; editingLine=null; renderAll(); }
+
+function renderStats(){
+  const r = roster[selected];
+  if(!r){ $('statList').innerHTML=''; return; }
+  $('statList').innerHTML = STATS.map(s=>{
+    const line = r.lines[s.key];
+    const avg = r.avg[s.key];
+    const pk = picks.find(x=>x.p===selected && x.s===s.key);
+    const lineHtml = editingLine===s.key
+      ? `<span class="line"><input id="lineEdit" type="number" step="0.5" value="${line}"
+           onblur="saveLine('${s.key}')" onkeydown="if(event.key==='Enter')this.blur()"></span>`
+      : `<span class="line" onclick="editLine('${s.key}')" title="Edit line">${line}</span>`;
+    return `<div class="stat">
+      <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
+      ${lineHtml}
+      <button class="dir ${pk&&pk.dir==='less'?'on-less':''}" onclick="pick(${selected},'${s.key}','less')">Less</button>
+      <button class="dir ${pk&&pk.dir==='more'?'on-more':''}" onclick="pick(${selected},'${s.key}','more')">More</button>
+    </div>`;
+  }).join('');
+  if(editingLine){ const el=$('lineEdit'); if(el){ el.focus(); el.select(); } }
+}
+function editLine(sk){ editingLine=sk; renderStats(); }
+function saveLine(sk){
+  const v = Number($('lineEdit').value);
+  if(!isNaN(v)){
+    roster[selected].lines[sk]=v;
+    const pk = picks.find(x=>x.p===selected && x.s===sk);
+    if(pk) pk.line = v;
+    pushState();
+  }
+  editingLine=null; renderAll();
+}
+
+function pick(p, s, dir){
+  const ex = picks.find(x=>x.p===p && x.s===s);
+  if(ex && ex.dir===dir){ picks = picks.filter(x=>x!==ex); }
+  else if(ex){ ex.dir = dir; }
+  else {
+    if(picks.length>=MAX_PICKS) return toast('Max '+MAX_PICKS+' picks per slip');
+    picks.push({p, s, line:roster[p].lines[s], dir});
+    $('slip').classList.add('open');
+  }
+  renderAll();
+}
+
+/* ================= slip ================= */
+function toggleSlip(){ $('slip').classList.toggle('open'); }
+function removePick(i){ picks.splice(i,1); renderAll(); }
+
+function renderSlip(){
+  $('slipCount').textContent = picks.length;
+  const m = MULT[picks.length];
+  $('slipMult').textContent = picks.length ? (m+'x payout') : '';
+  $('slipEmpty').classList.toggle('hide', picks.length>0);
+  $('slipForm').classList.toggle('hide', picks.length===0);
+  $('slipPicks').innerHTML = picks.map((x,i)=>`
+    <div class="pick">
+      <span>${esc(roster[x.p].name)} · ${statLabel(x.s)}
+        <span class="d-${x.dir}">${x.dir==='more'?'More':'Less'} ${x.line}</span></span>
+      <button class="x" onclick="removePick(${i})">✕</button>
+    </div>`).join('');
+  const stake = Number($('stake').value)||0;
+  $('toWin').classList.toggle('hide', picks.length===0);
+  if(picks.length) $('toWin').innerHTML =
+    `${picks.length} pick${picks.length>1?'s':''} · stake ${stake} → pays <b>${(stake*m).toFixed(0)}</b> if it hits`;
+}
+
+function placeSlip(){
+  const who = $('who').value.trim();
+  const stake = Number($('stake').value);
+  if(!who) return toast('Add your name');
+  if(!picks.length) return toast('Slip is empty');
+  if(!stake || stake<=0) return toast('Enter a stake');
+  tickets.push({ id:nextId++, who, stake,
+    picks: picks.map(x=>({...x, riot:roster[x.p].riot, pname:roster[x.p].name, result:null})),
+    status:'pending', payout:0 });
+  toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+MULT[picks.length]+'x');
+  picks = [];
+  $('slip').classList.remove('open');
+  pushState(); renderAll();
+}
+
+/* ================= tickets ================= */
+function renderTickets(){
+  if(!tickets.length){ $('ticketList').innerHTML='<div class="empty">No slips yet.</div>'; $('standings').innerHTML=''; return; }
+  $('ticketList').innerHTML = [...tickets].reverse().map(t=>{
+    const tag = {pending:'t-pending',won:'t-won',lost:'t-lost',push:'t-push'}[t.status];
+    const rows = t.picks.map(x=>{
+      const mk = x.result==='win'?'<span class="w">✔</span>':x.result==='loss'?'<span class="l">✘</span>':x.result==='push'?'<span class="p">▬</span>':'·';
+      const act = actuals[x.riot+'|'+x.s];
+      return `<div class="t-pick">${mk} ${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}${act!==undefined?' <span style="opacity:.7">(got '+(+act).toFixed(1).replace(/\.0$/,'')+')</span>':''}</div>`;
+    }).join('');
+    const foot = t.status==='pending' ? `Stake ${t.stake} · ${MULT[t.picks.length]}x if perfect`
+      : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
+      : t.status==='push' ? `Stake ${t.stake} refunded`
+      : `Stake ${t.stake} → lost`;
+    return `<div class="ticket">
+      <div class="t-head"><span class="who">${esc(t.who)} · ${t.picks.length}-pick</span><span class="t-tag ${tag}">${t.status}</span></div>
+      ${rows}<div class="t-foot">${foot}</div></div>`;
+  }).join('');
+
+  const net = {};
+  tickets.forEach(t=>{
+    if(t.status==='pending') return;
+    net[t.who] = (net[t.who]||0) + t.payout - t.stake;
+  });
+  $('standings').innerHTML = Object.entries(net).sort((a,b)=>b[1]-a[1]).map(([w,n])=>
+    `<span class="st-chip">${esc(w)} <span class="${n>=0?'pos':'neg'}">${n>=0?'+':''}${n.toFixed(0)}</span></span>`).join('');
+}
+
+/* ================= settle ================= */
+function pendingCombos(){
+  const map = new Map();
+  tickets.filter(t=>t.status==='pending').forEach(t=>
+    t.picks.forEach(x=>{ if(x.result==null) map.set(x.riot+'|'+x.s, x); }));
+  return map;
+}
+function renderSettle(){
+  const combos = pendingCombos();
+  $('settleActions').classList.toggle('hide', combos.size===0);
+  if(!combos.size){ $('settleList').innerHTML='<div class="empty">Nothing to grade.</div>'; return; }
+  $('settleList').innerHTML = [...combos.entries()].map(([k,x],idx)=>{
+    const cur = actuals[k];
+    return `<div class="s-row">
+      <span class="lbl">${esc(x.pname)} <span>· ${statLabel(x.s)} (line ${x.line})</span></span>
+      <input type="number" step="0.1" data-combo="${esc(k)}" placeholder="final" value="${cur!==undefined?cur:''}">
+    </div>`;
+  }).join('');
+}
+
+async function autofill(){
+  const btn=$('autofillBtn'); btn.disabled=true; btn.textContent='Fetching…';
+  const combos = pendingCombos();
+  const riots = [...new Set([...combos.keys()].map(k=>k.split('|')[0]))];
+  const cache = {};
+  for(const riot of riots){
+    const r = roster.find(x=>x.riot===riot);
+    if(!r) continue;
+    try{
+      const json = await hd('/valorant/v3/matches/'+r.region+'/'+encodeURIComponent(r.name)+'/'+encodeURIComponent(r.tag)+'?size=1');
+      const rows = matchRows(json, r);
+      if(rows.length) cache[riot] = rows[0];
+    }catch(e){ toast(e.message); }
+  }
+  combos.forEach((x,k)=>{
+    const [riot,s] = k.split('|');
+    if(cache[riot] && cache[riot][s]!==null && cache[riot][s]!==undefined)
+      actuals[k] = Math.round(cache[riot][s]*10)/10;
+  });
+  btn.disabled=false; btn.textContent='Pull last match';
+  toast(Object.keys(cache).length ? 'Finals pulled from each player\'s latest match — review, then grade' : 'Nothing fetched');
+  pushState(); renderSettle();
+}
+
+function gradeAll(){
+  document.querySelectorAll('#settleList input[data-combo]').forEach(inp=>{
+    if(inp.value!=='' && !isNaN(Number(inp.value))) actuals[inp.dataset.combo]=Number(inp.value);
+  });
+  tickets.forEach(t=>{
+    if(t.status!=='pending') return;
+    t.picks.forEach(x=>{
+      const a = actuals[x.riot+'|'+x.s];
+      if(a===undefined) return;
+      x.result = a===x.line ? 'push' : (a>x.line)===(x.dir==='more') ? 'win' : 'loss';
+    });
+    if(t.picks.some(x=>x.result==='loss')){ t.status='lost'; t.payout=0; return; }
+    if(t.picks.some(x=>x.result==null)) return;
+    const wins = t.picks.filter(x=>x.result==='win').length;
+    if(wins===0){ t.status='push'; t.payout=t.stake; return; }
+    t.status='won'; t.payout = t.stake * MULT[wins];
+  });
+  toast('Graded');
+  pushState(); renderAll();
+}
+
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderRosterTab(){
+  $('rosterList').innerHTML = roster.length ? roster.map((r,i)=>`
+    <div class="r-row">
+      <div class="r-name"><b>${esc(r.riot)}</b>
+        <span>${r.region.toUpperCase()} · ${r.matches ? 'synced ('+r.matches+' matches)' : 'not synced'}</span></div>
+      <button class="mini" id="sync-${i}" onclick="syncPlayer(${i})">Sync</button>
+      <button class="mini" onclick="removePlayer(${i})">✕</button>
+    </div>`).join('')
+    : '<div class="empty">No players saved yet.</div>';
+}
+
+function renderAll(){ renderRoster(); renderStats(); renderSlip(); renderTickets(); renderSettle(); renderRosterTab(); }
+$('apiKey').value = DEFAULT_API_KEY;
+renderAll();
+loadSetup();
+</script>
+</body>
+</html>
