@@ -268,7 +268,9 @@ function pushState(){
 function loadSetup(){
   stateRef.on('value', snap=>{
     const d = snap.val() || {};
-    roster = Array.isArray(d.roster) ? d.roster : [];
+    // Firebase drops empty objects/arrays on write (e.g. a never-synced player's avg:{}),
+    // so they come back as undefined instead of {} — patch defaults back in after every snapshot.
+    roster = (Array.isArray(d.roster) ? d.roster : []).map(r=>({...r, lines: r.lines || fresh(), avg: r.avg || {}}));
     tickets = Array.isArray(d.tickets) ? d.tickets : [];
     actuals = Object.fromEntries(d.actualsList || []);
     nextId = d.nextId || 1;
