@@ -208,7 +208,7 @@
     </div>
     <div id="rosterList"></div>
     <div class="hint">
-      Sync pulls a player's last 8 competitive matches and sets every line at their average, rounded to the nearest .5 — so each pick is roughly a coin flip and the multipliers stay fair.<br><br>
+      Sync pulls a player's last 5 competitive matches and sets every line at their average, rounded to the nearest .5 — so each pick is roughly a coin flip and the multipliers stay fair.<br><br>
       Roster, lines, tickets, and standings are synced live across everyone on this site — whatever anyone changes, everyone sees.
     </div>
   </section>
@@ -230,7 +230,7 @@
       <div id="slipPicks"></div>
       <div class="empty hide" id="slipEmpty">Pick More or Less on any line.</div>
       <div class="slip-row" id="slipForm">
-        <input id="who" placeholder="Your name" value="Alex">
+        <input id="who" placeholder="Your name">
         <input id="stake" type="number" value="50" min="1" style="max-width:90px" oninput="renderSlip()">
         <button class="btn" onclick="placeSlip()">Place</button>
       </div>
@@ -254,7 +254,7 @@ const STATS = [
 ];
 const MULT = {1:1.5, 2:3, 3:5, 4:10, 5:20, 6:25};
 const multFor = n => MULT[n] !== undefined ? MULT[n] : MULT[6] * Math.pow(2, n-6);   // doubles per pick past the hand-tuned table
-const SYNC_MATCHES = 8;
+const SYNC_MATCHES = 5;
 const API = 'https://prop-house-proxy.prophouse-birby.workers.dev';
 
 /* ================= shared realtime state (Firebase) ================= */
