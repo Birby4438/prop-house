@@ -23,11 +23,22 @@
   nav a{color:var(--dim);text-decoration:none;font-size:13px;margin-left:13px;cursor:pointer}
   nav a.on{color:var(--ink);border-bottom:2px solid var(--acc);padding-bottom:2px}
 
-  .roster-chips{display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px}
-  .pchip{flex:1;min-width:88px;background:var(--panel);border:1px solid var(--edge);color:var(--dim);
-    padding:9px 6px;border-radius:8px;cursor:pointer;text-align:center;font-size:13px;font-weight:500;white-space:nowrap}
-  .pchip.on{color:var(--ink);border-color:var(--acc)}
-  .pchip .n{display:block;font-family:'IBM Plex Mono';font-size:10px;color:var(--dim);margin-top:1px}
+  .roster-chips{display:flex;gap:8px;margin-bottom:18px;overflow-x:auto;padding:2px 2px 10px;
+    scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:var(--edge) transparent;
+    -webkit-mask-image:linear-gradient(to right,transparent,#000 10px,#000 calc(100% - 10px),transparent);
+    mask-image:linear-gradient(to right,transparent,#000 10px,#000 calc(100% - 10px),transparent)}
+  .roster-chips::-webkit-scrollbar{height:5px}
+  .roster-chips::-webkit-scrollbar-track{background:transparent}
+  .roster-chips::-webkit-scrollbar-thumb{background:var(--edge);border-radius:4px}
+  .roster-chips::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+  .pchip{flex:0 0 86px;scroll-snap-align:start;background:var(--panel);border:1px solid var(--edge);color:var(--dim);
+    padding:9px 8px;border-radius:8px;cursor:pointer;text-align:center;font-size:13px;font-weight:500;
+    transition:border-color .15s,background .15s,color .15s}
+  .pchip:hover{border-color:var(--dim)}
+  .pchip.on{color:var(--ink);border-color:var(--acc);background:rgba(255,176,31,.08)}
+  .pchip .lbl{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pchip .n{display:block;font-family:'IBM Plex Mono';font-size:10px;color:var(--dim);margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   .phead{display:flex;align-items:baseline;gap:10px;margin:4px 0 8px}
   .phead h2{font-size:16px;font-weight:600;cursor:pointer}
@@ -396,7 +407,7 @@ function renderRoster(){
   $('boardEmpty').classList.toggle('hide', roster.length>0);
   $('rosterChips').innerHTML = roster.map((r,i)=>{
     const n = picks.filter(x=>x.p===i).length;
-    return `<div class="pchip ${i===selected?'on':''}" onclick="selectPlayer(${i})">${esc(displayName(r))}<span class="n">${n? n+' picked':'&nbsp;'}</span></div>`;
+    return `<div class="pchip ${i===selected?'on':''}" onclick="selectPlayer(${i})"><span class="lbl">${esc(displayName(r))}</span><span class="n">${n? n+' picked':'&nbsp;'}</span></div>`;
   }).join('');
   const r = roster[selected];
   if(r){
