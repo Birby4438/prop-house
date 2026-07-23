@@ -269,7 +269,10 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const stateRef = firebase.database().ref('prophouse');
-let stateLoaded = false;
+const rosterRef = stateRef.child('roster');
+const ticketsRef = stateRef.child('tickets');
+const actualsRef = stateRef.child('actualsList');
+let rosterLoaded = false;
 
 /* ================= state ================= */
 let roster = [];   // {riot:'Name#TAG', name, tag, region, lines:{}, avg:{}, matches:0}
@@ -277,38 +280,48 @@ let selected = 0;
 let picks = [];    // {p, s, line, dir}
 let tickets = [];  // {id, who, stake, picks:[{p,s,line,dir,result,label}], status, payout}
 let actuals = {};  // "playerRiot|statKey" -> value
-let nextId = 1;
 let editingLine = null;
 let editingName = false;
 
 const $ = id => document.getElementById(id);
 const key = (p,s) => roster[p].riot + '|' + s;
-const statLabel = s => STATS.find(x=>x.key===s).label;
+const statLabel = s => (STATS.find(x=>x.key===s) || {label:s}).label;   // old tickets can reference a since-removed stat key
 const fresh = () => Object.fromEntries(STATS.map(s=>[s.key, s.def]));
 
 let toastTimer;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2800); }
 
-/* ================= persistence (shared, live, via Firebase) ================= */
-function pushState(){
-  if(!stateLoaded) return;   // don't clobber shared state before the first sync arrives
-  stateRef.set({
-    roster, tickets, nextId,
-    actualsList: Object.entries(actuals)   // riot IDs contain "#", illegal as a Firebase key — store as pairs instead
-  });
+/* ================= persistence (shared, live, via Firebase) =================
+   Each collection lives at its own path and is written independently — a
+   roster edit only ever touches roster/, placing or grading a ticket only
+   ever touches that ticket's own tickets/<id> path. Earlier this was one
+   big object rewritten wholesale on every change, which meant a client
+   with a stale local copy of *anything* (tickets, roster, whatever) would
+   silently wipe out other people's more recent changes to the whole blob
+   the next time it wrote. That's what deleted real tickets during testing. */
+function pushRoster(){
+  if(!rosterLoaded) return;   // don't clobber shared roster before the first sync arrives
+  rosterRef.set(roster);
 }
+function pushActuals(){ actualsRef.set(Object.entries(actuals)); }   // riot IDs contain "#", illegal as a Firebase key — store as pairs
+
 function loadSetup(){
-  stateRef.on('value', snap=>{
-    const d = snap.val() || {};
+  rosterRef.on('value', snap=>{
     // Firebase drops empty objects/arrays on write (e.g. a never-synced player's avg:{}),
     // so they come back as undefined instead of {} — patch defaults back in after every snapshot.
-    roster = (Array.isArray(d.roster) ? d.roster : []).map(r=>({...r, lines: r.lines || fresh(), avg: r.avg || {}}));
-    tickets = Array.isArray(d.tickets) ? d.tickets : [];
-    actuals = Object.fromEntries(d.actualsList || []);
-    nextId = d.nextId || 1;
+    roster = (Array.isArray(snap.val()) ? snap.val() : []).map(r=>({...r, lines: r.lines || fresh(), avg: r.avg || {}}));
     if(selected>=roster.length) selected = Math.max(0, roster.length-1);
-    stateLoaded = true;
+    rosterLoaded = true;
+    renderAll();
+  });
+  ticketsRef.on('value', snap=>{
+    const val = snap.val() || {};
+    tickets = Object.keys(val).map(id=>({...val[id], id}));
+    renderAll();
+  });
+  actualsRef.on('value', snap=>{
+    actuals = Object.fromEntries(snap.val() || []);
     renderAll();
   });
 }
@@ -331,7 +344,7 @@ function addPlayer(){
   if(roster.some(r=>r.riot.toLowerCase()===riot.toLowerCase())) return toast('Already on the roster');
   roster.push({riot, name, tag, region, lines:fresh(), avg:{}, matches:0});
   $('newRiot').value='';
-  pushState(); renderAll();
+  pushRoster(); renderAll();
   syncPlayer(roster.length-1);   // auto-sync on add
 }
 function removePlayer(i){
@@ -340,7 +353,7 @@ function removePlayer(i){
   picks = picks.filter(x=>x.p!==i).map(x=>({...x, p: x.p>i ? x.p-1 : x.p}));
   if(selected>=roster.length) selected = Math.max(0, roster.length-1);
   toast(gone+' removed');
-  pushState(); renderAll();
+  pushRoster(); renderAll();
 }
 
 /* ================= API sync ================= */
@@ -402,7 +415,7 @@ async function syncPlayer(i){
     });
     r.matches = rows.length;
     toast(riot+' synced — lines set from last '+rows.length+' matches');
-    pushState();
+    pushRoster();
   }catch(e){
     toast(e.message==='Failed to fetch' ? 'Request blocked — open this file directly in your browser' : e.message);
   }
@@ -434,7 +447,7 @@ function saveName(){
   const r = roster[selected];
   if(r){ if(v) r.label = v; else delete r.label; }
   editingName = false;
-  pushState(); renderAll();
+  pushRoster(); renderAll();
 }
 
 function renderStats(){
@@ -465,7 +478,7 @@ function saveLine(sk){
     roster[selected].lines[sk]=v;
     const pk = picks.find(x=>x.p===selected && x.s===sk);
     if(pk) pk.line = v;
-    pushState();
+    pushRoster();
   }
   editingLine=null; renderAll();
 }
@@ -517,13 +530,16 @@ function placeSlip(){
   if(!who) return toast('Add your name');
   if(!picks.length) return toast('Slip is empty');
   if(!stake || stake<=0) return toast('Enter a stake');
-  tickets.push({ id:nextId++, who, stake,
+  const id = ticketsRef.push().key;   // unique key generated client-side, no counter to collide on
+  const ticket = { id, who, stake,
     picks: picks.map(x=>({...x, riot:roster[x.p].riot, pname:displayName(roster[x.p]), result:null})),
-    status:'pending', payout:0 });
+    status:'pending', payout:0 };
+  tickets.push(ticket);
+  ticketsRef.child(id).set(ticket);   // only this ticket's own path — can't clobber anyone else's
   toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+multFor(picks.length)+'x');
   picks = [];
   closeSlip();
-  pushState(); renderAll();
+  renderAll();
 }
 
 /* ================= tickets ================= */
@@ -536,7 +552,8 @@ function removeTicket(id){
   if(!confirm(msg)) return;
   tickets = tickets.filter(x=>x.id!==id);
   toast(t.status==='pending' ? 'Slip cancelled' : 'Slip deleted');
-  pushState(); renderAll();
+  ticketsRef.child(id).remove();
+  renderAll();
 }
 function renderTickets(){
   if(!tickets.length){ $('ticketList').innerHTML='<div class="empty">No slips yet.</div>'; $('standings').innerHTML=''; return; }
@@ -550,7 +567,7 @@ function renderTickets(){
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
       : t.status==='push' ? `Stake ${t.stake} refunded`
       : `Stake ${t.stake} → lost`;
-    const actionBtn = `<button class="t-cancel" onclick="removeTicket(${t.id})">${t.status==='pending'?'Cancel':'Delete'}</button>`;
+    const actionBtn = `<button class="t-cancel" onclick="removeTicket('${t.id}')">${t.status==='pending'?'Cancel':'Delete'}</button>`;
     return `<div class="ticket">
       <div class="t-head"><span class="who">${esc(t.who)} · ${t.picks.length}-pick</span><span class="t-tag ${tag}">${t.status}</span></div>
       ${rows}<div class="t-foot"><span>${foot}</span>${actionBtn}</div></div>`;
@@ -606,13 +623,14 @@ async function autofill(){
   });
   btn.disabled=false; btn.textContent='Pull last match';
   toast(Object.keys(cache).length ? 'Finals pulled from each player\'s latest match — review, then grade' : 'Nothing fetched');
-  pushState(); renderSettle();
+  pushActuals(); renderSettle();
 }
 
 function gradeAll(){
   document.querySelectorAll('#settleList input[data-combo]').forEach(inp=>{
     if(inp.value!=='' && !isNaN(Number(inp.value))) actuals[inp.dataset.combo]=Number(inp.value);
   });
+  const updates = {};   // ticketId -> full ticket — only tickets actually graded get written
   tickets.forEach(t=>{
     if(t.status!=='pending') return;
     t.picks.forEach(x=>{
@@ -620,14 +638,17 @@ function gradeAll(){
       if(a===undefined) return;
       x.result = a===x.line ? 'push' : (a>x.line)===(x.dir==='more') ? 'win' : 'loss';
     });
-    if(t.picks.some(x=>x.result==='loss')){ t.status='lost'; t.payout=0; return; }
-    if(t.picks.some(x=>x.result==null)) return;
-    const wins = t.picks.filter(x=>x.result==='win').length;
-    if(wins===0){ t.status='push'; t.payout=t.stake; return; }
-    t.status='won'; t.payout = t.stake * multFor(wins);
+    if(t.picks.some(x=>x.result==='loss')){ t.status='lost'; t.payout=0; }
+    else if(!t.picks.some(x=>x.result==null)){
+      const wins = t.picks.filter(x=>x.result==='win').length;
+      if(wins===0){ t.status='push'; t.payout=t.stake; }
+      else { t.status='won'; t.payout = t.stake * multFor(wins); }
+    }
+    updates[t.id] = t;
   });
   toast('Graded');
-  pushState(); renderAll();
+  if(Object.keys(updates).length) ticketsRef.update(updates);
+  pushActuals(); renderAll();
 }
 
 function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
