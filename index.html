@@ -544,8 +544,7 @@ function renderTickets(){
     const tag = {pending:'t-pending',won:'t-won',lost:'t-lost',push:'t-push'}[t.status];
     const rows = t.picks.map(x=>{
       const mk = x.result==='win'?'<span class="w">✔</span>':x.result==='loss'?'<span class="l">✘</span>':x.result==='push'?'<span class="p">▬</span>':'·';
-      const act = actuals[x.riot+'|'+x.s];
-      return `<div class="t-pick">${mk} ${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}${act!==undefined?' <span style="opacity:.7">(got '+(+act).toFixed(1).replace(/\.0$/,'')+')</span>':''}</div>`;
+      return `<div class="t-pick">${mk} ${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}</div>`;
     }).join('');
     const foot = t.status==='pending' ? `Stake ${t.stake} · ${multFor(t.picks.length)}x if perfect`
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
