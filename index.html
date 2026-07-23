@@ -370,8 +370,14 @@ function balanceFor(name){
    flip), matching how lines are set in the first place. */
 const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
 function probOver(samples, line, dir){
-  const overs = samples.filter(v=>v>line).length;
-  const pOver = (overs+1)/(samples.length+2);   // Laplace-smoothed so a handful of samples never hits a hard 0% or 100%
+  // a continuous curve fit to the sample's mean/spread, not a raw count of samples above the
+  // line — counting only gives as many distinct values as there are samples (5), so the odds
+  // would visibly jump between a handful of levels instead of scaling smoothly while dragging
+  const mean = samples.reduce((a,b)=>a+b,0)/samples.length;
+  const variance = samples.reduce((a,b)=>a+(b-mean)*(b-mean),0)/samples.length;
+  const sd = Math.max(Math.sqrt(variance), mean*0.15, 0.5);   // floor so near-identical samples don't produce a near-vertical curve
+  const z = (mean-line)/sd;
+  const pOver = 1/(1+Math.exp(-1.7*z));   // logistic approximation of the normal CDF
   return dir==='more' ? pOver : 1-pOver;
 }
 function legOdds(r, statKey, line, dir){
