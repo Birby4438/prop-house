@@ -583,11 +583,11 @@ function inferredDir(r, sk, line){
   const base = r.lines[sk];
   if(line < base) return 'less';
   if(line > base) return 'more';
-  return null;
+  return 'more';   // at rest with nothing else to go on, default to showing More
 }
 const oddsHintText = (pk, r, sk, line) => {
   const dir = pk ? pk.dir : inferredDir(r, sk, line);
-  return dir ? (dir==='more'?'More':'Less')+' '+legFactor(r,sk,line,dir).toFixed(2)+'x' : '';
+  return (dir==='more'?'More':'Less')+' '+legFactor(r,sk,line,dir).toFixed(2)+'x';
 };
 
 function renderStats(){
