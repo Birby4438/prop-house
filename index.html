@@ -102,6 +102,8 @@
     padding:10px 18px;border-radius:8px;cursor:pointer;white-space:nowrap}
   .btn:disabled{opacity:.4;cursor:not-allowed}
   .btn-ghost{background:none;border:1px solid var(--edge);color:var(--ink)}
+  .bal-hint{font-family:'IBM Plex Mono';font-size:11.5px;color:var(--dim);margin-top:8px}
+  .bal-hint.over{color:var(--less)}
   .to-win{font-family:'IBM Plex Mono';font-size:12px;color:var(--dim);margin-top:8px}
   .to-win b{color:var(--more)}
 
@@ -260,10 +262,11 @@
       <div id="slipPicks"></div>
       <div class="empty hide" id="slipEmpty">Pick More or Less on any line.</div>
       <div class="slip-row" id="slipForm">
-        <input id="who" placeholder="Your name">
+        <input id="who" placeholder="Your name" oninput="renderSlip()">
         <input id="stake" type="number" value="50" min="1" style="max-width:90px" oninput="renderSlip()">
         <button class="btn" onclick="placeSlip()">Place</button>
       </div>
+      <div class="bal-hint" id="balHint"></div>
       <div class="to-win" id="toWin"></div>
     </div>
   </div>
@@ -294,6 +297,36 @@ function regradeTicket(t){
   t.status='won'; t.payout = t.stake * slipMultiplier(winners);
 }
 
+/* ---- bankroll tracking ----
+   Bettor names are free text ("who"), so the same person can end up typed
+   as "mooppie" and "Mooppie" — all money math below groups strictly by
+   lowercased name so they're always treated as one person, while still
+   displaying whichever casing they first typed. */
+const DEFAULT_BANKROLL = 100;
+function netByPerson(){
+  const net = {};   // lowercase name -> {label, total}
+  tickets.forEach(t=>{
+    if(t.status==='pending') return;
+    const k = t.who.trim().toLowerCase();
+    if(!k) return;
+    if(!net[k]) net[k] = {label: t.who.trim(), total: 0};
+    net[k].total += t.payout - t.stake;
+  });
+  return net;
+}
+function startingBalance(name){
+  const k = name.trim().toLowerCase();
+  const v = startingBalances[k];
+  return v!==undefined ? v : DEFAULT_BANKROLL;
+}
+function balanceFor(name){
+  const k = name.trim().toLowerCase();
+  const entry = netByPerson()[k];
+  const pending = tickets.filter(t=>t.status==='pending' && t.who.trim().toLowerCase()===k)
+    .reduce((sum,t)=>sum+t.stake, 0);
+  return startingBalance(name) + (entry ? entry.total : 0) - pending;   // reserves stakes already tied up in other pending slips
+}
+
 /* ---- per-stat, per-direction odds ----
    Lines are set at toHalf(avg), which is close to a coin flip but not
    necessarily exactly one — some stats are naturally lopsided even at
@@ -312,7 +345,7 @@ function legFactor(r, statKey, line, dir){
   const samples = r && r.samples && r.samples[statKey];
   if(!samples || samples.length<3) return 1;   // no data to price this leg off of — stay neutral
   const pHit = probOver(samples, line, dir);
-  return clamp(0.5/pHit, 0.3, 3);   // pHit>50% (easier than a coin flip) -> factor<1; pHit<50% (harder) -> factor>1
+  return clamp(0.5/pHit, 0.3, 5);   // pHit>50% (easier than a coin flip) -> factor<1; pHit<50% (harder) -> factor>1
 }
 function slipMultiplier(pickList){
   const adj = pickList.reduce((prod,x)=>prod*(x.factor||1), 1);
@@ -336,6 +369,7 @@ const stateRef = firebase.database().ref('prophouse');
 const rosterRef = stateRef.child('roster');
 const ticketsRef = stateRef.child('tickets');
 const actualsRef = stateRef.child('actualsList');
+const balancesRef = stateRef.child('startingBalances');
 let rosterLoaded = false;
 
 /* ================= state ================= */
@@ -344,6 +378,7 @@ let selected = 0;
 let picks = [];    // {p, s, line, dir}
 let tickets = [];  // {id, who, stake, picks:[{p,s,line,dir,pid,pname,result}], status, payout}
 let actuals = {};  // "playerId|statKey" -> value
+let startingBalances = {};   // lowercase bettor name -> starting bankroll (defaults to DEFAULT_BANKROLL if absent)
 let editingName = false;
 let editingTicket = null;
 
@@ -387,6 +422,10 @@ function loadSetup(){
   });
   actualsRef.on('value', snap=>{
     actuals = Object.fromEntries(snap.val() || []);
+    renderAll();
+  });
+  balancesRef.on('value', snap=>{
+    startingBalances = snap.val() || {};
     renderAll();
   });
 }
@@ -672,6 +711,16 @@ function renderSlip(){
   if(picks.length) $('toWin').innerHTML =
     `${picks.length} pick${picks.length>1?'s':''} · stake ${stake} → pays <b>${(stake*m).toFixed(0)}</b> if it hits`;
 
+  const who = $('who').value.trim();
+  const balEl = $('balHint');
+  if(balEl){
+    if(who){
+      const bal = balanceFor(who);
+      balEl.textContent = who+"'s balance: "+bal.toFixed(0);
+      balEl.classList.toggle('over', stake>bal);
+    } else { balEl.textContent = ''; balEl.classList.remove('over'); }
+  }
+
   $('slipTab').classList.toggle('hide', picks.length===0);
   $('slipTabCount').textContent = picks.length;
   $('slipTabMult').textContent = picks.length ? m+'x' : '';
@@ -684,6 +733,8 @@ function placeSlip(){
   if(!who) return toast('Add your name');
   if(!picks.length) return toast('Slip is empty');
   if(!stake || stake<=0) return toast('Enter a stake');
+  const bal = balanceFor(who);
+  if(stake > bal) return toast(who+"'s balance is "+bal.toFixed(0)+' — lower your stake');
   const id = ticketsRef.push().key;   // unique key generated client-side, no counter to collide on
   const ticket = { id, who, stake,
     picks: picks.map(x=>({...x, pid:roster[x.p].id, pname:displayName(roster[x.p]), result:null})),
@@ -792,13 +843,8 @@ function renderTickets(){
       ${rows}<div class="t-foot"><span>${foot}</span><span class="t-foot-actions">${editBtn}${actionBtn}</span></div></div>`;
   }).join('');
 
-  const net = {};
-  tickets.forEach(t=>{
-    if(t.status==='pending') return;
-    net[t.who] = (net[t.who]||0) + t.payout - t.stake;
-  });
-  $('standings').innerHTML = Object.entries(net).sort((a,b)=>b[1]-a[1]).map(([w,n])=>
-    `<span class="st-chip">${esc(w)} <span class="${n>=0?'pos':'neg'}">${n>=0?'+':''}${n.toFixed(0)}</span></span>`).join('');
+  $('standings').innerHTML = Object.values(netByPerson()).sort((a,b)=>b.total-a.total).map(({label,total})=>
+    `<span class="st-chip">${esc(label)} <span class="${total>=0?'pos':'neg'}">${total>=0?'+':''}${total.toFixed(0)}</span></span>`).join('');
 }
 
 /* ================= settle ================= */
