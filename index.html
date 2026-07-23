@@ -244,12 +244,13 @@
 <script>
 /* ================= config ================= */
 const STATS = [
-  {key:'kills',  label:'Kills',           def:15.5},
-  {key:'deaths', label:'Deaths',          def:13.5},
-  {key:'assists',label:'Assists',         def:4.5},
-  {key:'ka',     label:'Kills + Assists', def:20.5},
-  {key:'hs',     label:'Headshot %',      def:24.5},
-  {key:'acs',    label:'Avg Combat Score',def:210.5},
+  {key:'kills',  label:'Kills',             def:15.5},
+  {key:'deaths', label:'Deaths',            def:13.5},
+  {key:'assists',label:'Assists',           def:4.5},
+  {key:'ka',     label:'Kills + Assists',   def:20.5},
+  {key:'fhk',    label:'First Half Kills',  def:9.5},
+  {key:'fb',     label:'First Bloods',      def:1.5},
+  {key:'acs',    label:'Avg Combat Score',  def:210.5},
 ];
 const MULT = {1:1.5, 2:3, 3:5, 4:10, 5:20, 6:25};
 const multFor = n => MULT[n] !== undefined ? MULT[n] : MULT[6] * Math.pow(2, n-6);   // doubles per pick past the hand-tuned table
@@ -360,11 +361,19 @@ function matchRows(json, r){
       p.name && p.name.toLowerCase()===r.name.toLowerCase() && p.tag && p.tag.toLowerCase()===r.tag.toLowerCase());
     if(!me || !me.stats || !rounds) return;
     const st = me.stats;
-    const shots = (st.headshots||0)+(st.bodyshots||0)+(st.legshots||0);
+    const kills = m.kills || [];
+    // first half is always rounds 0-11 regardless of overtime (regulation is first-to-13, sides swap after round 12)
+    const fhk = kills.filter(k=>k.round<12 && k.killer_puuid===me.puuid).length;
+    const firstPerRound = new Map();
+    kills.forEach(k=>{
+      const cur = firstPerRound.get(k.round);
+      if(!cur || k.kill_time_in_round<cur.kill_time_in_round) firstPerRound.set(k.round, k);
+    });
+    const fb = [...firstPerRound.values()].filter(k=>k.killer_puuid===me.puuid).length;
     rows.push({
       kills: st.kills||0, deaths: st.deaths||0, assists: st.assists||0,
       ka: (st.kills||0)+(st.assists||0),
-      hs: shots ? (st.headshots||0)/shots*100 : null,
+      fhk, fb,
       acs: rounds ? (st.score||0)/rounds : null,
     });
   });
