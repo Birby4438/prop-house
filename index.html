@@ -84,6 +84,7 @@
   .pick{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--edge);font-size:13px}
   .pick .d-more{color:var(--more);font-weight:600}
   .pick .d-less{color:var(--less);font-weight:600}
+  .pick .leg-odds{font-family:'IBM Plex Mono';font-size:11px;color:var(--acc);margin-left:4px}
   .pick .x{background:none;border:none;color:var(--dim);cursor:pointer;font-size:15px}
   .slip-row{display:flex;gap:8px;margin-top:12px;align-items:center}
   .slip-row input{flex:1;background:var(--bg);border:1px solid var(--edge);color:var(--ink);
@@ -254,6 +255,31 @@ const STATS = [
 ];
 const MULT = {1:1.5, 2:3, 3:5, 4:10, 5:20, 6:25};
 const multFor = n => MULT[n] !== undefined ? MULT[n] : MULT[6] * Math.pow(2, n-6);   // doubles per pick past the hand-tuned table
+
+/* ---- sportsbook-style line pricing ----
+   Lines start at toHalf(avg), roughly a coin flip. If someone drags a line
+   away from that, the pick is no longer 50/50, so its payout contribution
+   should move too — easier to hit pays less, harder to hit pays more.
+   Priced off the player's actual last-N game values (Laplace-smoothed since
+   N is small), relative to what the fair/default line would have priced. */
+const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
+function probOver(samples, line, dir){
+  const overs = samples.filter(v=>v>line).length;
+  const pOver = (overs+1)/(samples.length+2);   // +1/+2 Laplace smoothing so 5 samples never hit a hard 0% or 100%
+  return dir==='more' ? pOver : 1-pOver;
+}
+function legFactor(r, statKey, line, dir){
+  const samples = r && r.samples && r.samples[statKey];
+  const avg = r && r.avg && r.avg[statKey];
+  if(!samples || samples.length<3 || avg===undefined) return 1;   // no data to price a custom line off of — stay neutral
+  const pFair = probOver(samples, toHalf(avg), dir);
+  const pLine = probOver(samples, line, dir);
+  return clamp(pFair/pLine, 0.3, 3);
+}
+function slipMultiplier(pickList){
+  const adj = pickList.reduce((prod,x)=>prod*(x.factor||1), 1);
+  return Math.round(multFor(pickList.length) * adj * 10)/10;
+}
 const SYNC_MATCHES = 5;
 const API = 'https://prop-house-proxy.prophouse-birby.workers.dev';
 
@@ -310,7 +336,7 @@ function loadSetup(){
   rosterRef.on('value', snap=>{
     // Firebase drops empty objects/arrays on write (e.g. a never-synced player's avg:{}),
     // so they come back as undefined instead of {} — patch defaults back in after every snapshot.
-    roster = (Array.isArray(snap.val()) ? snap.val() : []).map(r=>({...r, lines: r.lines || fresh(), avg: r.avg || {}}));
+    roster = (Array.isArray(snap.val()) ? snap.val() : []).map(r=>({...r, lines: r.lines || fresh(), avg: r.avg || {}, samples: r.samples || {}}));
     if(selected>=roster.length) selected = Math.max(0, roster.length-1);
     rosterLoaded = true;
     renderAll();
@@ -406,12 +432,14 @@ async function syncPlayer(i){
     const r = roster[idx];
     const rows = matchRows(json, r);
     if(!rows.length) throw new Error('No recent competitive matches found for '+riot);
+    r.samples = r.samples || {};
     STATS.forEach(s=>{
       const vals = rows.map(x=>x[s.key]).filter(v=>v!==null && !isNaN(v));
       if(!vals.length) return;
       const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
       r.avg[s.key] = avg;
       r.lines[s.key] = toHalf(avg);
+      r.samples[s.key] = vals;   // the actual recent game values — used to price odds when a line gets moved
     });
     r.matches = rows.length;
     toast(riot+' synced — lines set from last '+rows.length+' matches');
@@ -477,7 +505,7 @@ function saveLine(sk){
     const v = toHalf(raw);   // always end in .5, same as synced lines
     roster[selected].lines[sk]=v;
     const pk = picks.find(x=>x.p===selected && x.s===sk);
-    if(pk) pk.line = v;
+    if(pk){ pk.line = v; pk.factor = legFactor(roster[selected], sk, v, pk.dir); }
     pushRoster();
   }
   editingLine=null; renderAll();
@@ -486,10 +514,11 @@ function saveLine(sk){
 function pick(p, s, dir){
   const ex = picks.find(x=>x.p===p && x.s===s);
   if(ex && ex.dir===dir){ picks = picks.filter(x=>x!==ex); }
-  else if(ex){ ex.dir = dir; }
+  else if(ex){ ex.dir = dir; ex.factor = legFactor(roster[p], s, ex.line, dir); }
   else {
     const wasEmpty = picks.length===0;
-    picks.push({p, s, line:roster[p].lines[s], dir});
+    const line = roster[p].lines[s];
+    picks.push({p, s, line, dir, factor: legFactor(roster[p], s, line, dir)});
     if(wasEmpty) openSlip();   // peek open on the first pick only — don't keep blocking the board on every add
   }
   renderAll();
@@ -503,14 +532,14 @@ function removePick(i){ picks.splice(i,1); renderAll(); }
 
 function renderSlip(){
   $('slipCount').textContent = picks.length;
-  const m = picks.length ? multFor(picks.length) : 0;
+  const m = picks.length ? slipMultiplier(picks) : 0;
   $('slipMult').textContent = picks.length ? (m+'x payout') : '';
   $('slipEmpty').classList.toggle('hide', picks.length>0);
   $('slipForm').classList.toggle('hide', picks.length===0);
   $('slipPicks').innerHTML = picks.map((x,i)=>`
     <div class="pick">
       <span>${esc(displayName(roster[x.p]))} · ${statLabel(x.s)}
-        <span class="d-${x.dir}">${x.dir==='more'?'More':'Less'} ${x.line}</span></span>
+        <span class="d-${x.dir}">${x.dir==='more'?'More':'Less'} ${x.line}</span>${x.factor && Math.abs(x.factor-1)>=0.01?' <span class="leg-odds">'+x.factor.toFixed(2)+'x</span>':''}</span>
       <button class="x" onclick="removePick(${i})">✕</button>
     </div>`).join('');
   const stake = Number($('stake').value)||0;
@@ -536,7 +565,7 @@ function placeSlip(){
     status:'pending', payout:0 };
   tickets.push(ticket);
   ticketsRef.child(id).set(ticket);   // only this ticket's own path — can't clobber anyone else's
-  toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+multFor(picks.length)+'x');
+  toast('Slip placed — '+picks.length+' pick'+(picks.length>1?'s':'')+' at '+slipMultiplier(picks)+'x');
   picks = [];
   closeSlip();
   renderAll();
@@ -563,7 +592,7 @@ function renderTickets(){
       const mk = x.result==='win'?'<span class="w">✔</span>':x.result==='loss'?'<span class="l">✘</span>':x.result==='push'?'<span class="p">▬</span>':'·';
       return `<div class="t-pick">${mk} ${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}</div>`;
     }).join('');
-    const foot = t.status==='pending' ? `Stake ${t.stake} · ${multFor(t.picks.length)}x if perfect`
+    const foot = t.status==='pending' ? `Stake ${t.stake} · ${slipMultiplier(t.picks)}x if perfect`
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
       : t.status==='push' ? `Stake ${t.stake} refunded`
       : `Stake ${t.stake} → lost`;
@@ -640,9 +669,9 @@ function gradeAll(){
     });
     if(t.picks.some(x=>x.result==='loss')){ t.status='lost'; t.payout=0; }
     else if(!t.picks.some(x=>x.result==null)){
-      const wins = t.picks.filter(x=>x.result==='win').length;
-      if(wins===0){ t.status='push'; t.payout=t.stake; }
-      else { t.status='won'; t.payout = t.stake * multFor(wins); }
+      const winners = t.picks.filter(x=>x.result==='win');
+      if(winners.length===0){ t.status='push'; t.payout=t.stake; }
+      else { t.status='won'; t.payout = t.stake * slipMultiplier(winners); }
     }
     updates[t.id] = t;
   });
