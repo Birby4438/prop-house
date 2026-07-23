@@ -369,22 +369,26 @@ function balanceFor(name){
    no data to price a leg off of, it defaults to fair 2.0 odds (a coin
    flip), matching how lines are set in the first place. */
 const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
-function probOver(samples, line, dir){
+function probOver(samples, line, dir, def){
   // a continuous curve fit to the sample's mean/spread, not a raw count of samples above the
   // line — counting only gives as many distinct values as there are samples (5), so the odds
-  // would visibly jump between a handful of levels instead of scaling smoothly while dragging
+  // would visibly jump between a handful of levels instead of scaling smoothly while dragging.
+  // The spread is floored against the STAT's own fixed scale (def), not just the 5-game sample's
+  // own variance — with only 5 games, a lucky/unlucky tight streak can make the raw sample
+  // variance tiny, which makes the curve extremely steep and still "jumps" a full step at a time.
   const mean = samples.reduce((a,b)=>a+b,0)/samples.length;
   const variance = samples.reduce((a,b)=>a+(b-mean)*(b-mean),0)/samples.length;
-  const sd = Math.max(Math.sqrt(variance), mean*0.15, 0.5);   // floor so near-identical samples don't produce a near-vertical curve
+  const sd = Math.max(Math.sqrt(variance), def*0.5);
   const z = (mean-line)/sd;
-  const pOver = 1/(1+Math.exp(-1.7*z));   // logistic approximation of the normal CDF
+  const pOver = 1/(1+Math.exp(-z));   // logistic curve — gentle slope, no near-vertical jumps
   return dir==='more' ? pOver : 1-pOver;
 }
 function legOdds(r, statKey, line, dir){
   const samples = r && r.samples && r.samples[statKey];
   if(!samples || samples.length<3) return 2;   // no data — price it as a fair coin flip
-  const pHit = probOver(samples, line, dir);
-  return clamp(1/pHit, 1.1, 10);
+  const def = (STATS.find(s=>s.key===statKey) || {}).def || 10;
+  const pHit = probOver(samples, line, dir, def);
+  return clamp(1/pHit, 1.2, 6);
 }
 function slipMultiplier(pickList){
   const total = pickList.reduce((prod,x)=>prod*(x.odds||2), 1);
