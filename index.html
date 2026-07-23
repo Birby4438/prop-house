@@ -577,7 +577,18 @@ function sliderBounds(r, sk, def){
 }
 
 // only meaningful once a direction is actually picked — otherwise there's nothing to show odds for
-const oddsHintText = (pk, r, sk, line) => pk ? (pk.dir==='more'?'More':'Less')+' '+legFactor(r,sk,line,pk.dir).toFixed(2)+'x' : '';
+// with no pick yet, infer intent from which way the slider's been dragged off the resting line —
+// down implies you're weighing Less, up implies More; back at rest there's nothing to show yet
+function inferredDir(r, sk, line){
+  const base = r.lines[sk];
+  if(line < base) return 'less';
+  if(line > base) return 'more';
+  return null;
+}
+const oddsHintText = (pk, r, sk, line) => {
+  const dir = pk ? pk.dir : inferredDir(r, sk, line);
+  return dir ? (dir==='more'?'More':'Less')+' '+legFactor(r,sk,line,dir).toFixed(2)+'x' : '';
+};
 
 function renderStats(){
   const r = roster[selected];
