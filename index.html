@@ -565,14 +565,12 @@ function saveName(){
 }
 
 // a usable drag range around the player's real spread for this stat, always landing on .5 endpoints
-function sliderBounds(r, sk, def){
-  const samples = r.samples && r.samples[sk];
-  const avg = r.avg && r.avg[sk];
-  const center = avg!==undefined ? avg : def;
-  const spread = (samples && samples.length>1) ? (Math.max(...samples)-Math.min(...samples)) : center*0.6;
-  const half = Math.max(3, spread*0.9, center*0.4);
-  const lo = Math.max(0.5, toHalf(center-half));
-  const hi = Math.max(lo+3, toHalf(center+half));
+function sliderBounds(sk, def, line){
+  // fixed span per stat (never data-dependent, so it can't drift between renders), centered on
+  // wherever the line currently sits — the bar's length always stays the same, only its position moves
+  const half = Math.max(3, def*0.5);
+  const lo = Math.max(0.5, toHalf(line-half));
+  const hi = toHalf(line+half);
   return [lo, hi];
 }
 
@@ -597,7 +595,7 @@ function renderStats(){
     const line = r.lines[s.key];
     const avg = r.avg[s.key];
     const pk = picks.find(x=>x.p===selected && x.s===s.key);
-    const [lo,hi] = sliderBounds(r, s.key, s.def);
+    const [lo,hi] = sliderBounds(s.key, s.def, line);
     return `<div class="stat">
       <div class="stat-head">
         <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
