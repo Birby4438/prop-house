@@ -437,11 +437,15 @@ async function syncPlayer(i){
   try{
     // pull each linked account's own most recent games, then pool everyone's rows and
     // keep only the SYNC_MATCHES most recent overall — this is always correct because a
-    // game can only land in the global top-N if it's also within that account's own top-N
+    // game can only land in the global top-N if it's also within that account's own top-N.
+    // Each account is fetched independently so one bad/mistyped alt can't break the others.
     const pool = [];
+    const failures = [];
     for(const acct of accounts){
-      const json = await hd('/valorant/v3/matches/'+acct.region+'/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?mode=competitive&size='+SYNC_MATCHES);
-      (json.data||[]).forEach(m=>{ const row = matchRowFor(m, acct); if(row) pool.push(row); });
+      try{
+        const json = await hd('/valorant/v3/matches/'+acct.region+'/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?mode=competitive&size='+SYNC_MATCHES);
+        (json.data||[]).forEach(m=>{ const row = matchRowFor(m, acct); if(row) pool.push(row); });
+      }catch(e){ failures.push(acct.riot); }
     }
     if(!pool.length) throw new Error('No recent competitive matches found for '+label);
     pool.sort((a,b)=>b.gameStart-a.gameStart);
@@ -458,7 +462,9 @@ async function syncPlayer(i){
       r.lines[s.key] = toHalf(avg);
     });
     r.matches = rows.length;
-    toast(label+' synced — lines set from last '+rows.length+' matches'+(accounts.length>1?' across '+accounts.length+' accounts':''));
+    const suffix = accounts.length>1 ? ' across '+(accounts.length-failures.length)+'/'+accounts.length+' accounts' : '';
+    toast(label+' synced — lines set from last '+rows.length+' matches'+suffix
+      +(failures.length ? ' (couldn\'t reach '+failures.join(', ')+')' : ''));
     pushRoster();
   }catch(e){
     toast(e.message==='Failed to fetch' ? 'Request blocked — open this file directly in your browser' : e.message);
