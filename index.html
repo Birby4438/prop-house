@@ -274,13 +274,13 @@
 <script>
 /* ================= config ================= */
 const STATS = [
-  {key:'kills',  label:'Kills',             def:15.5},
-  {key:'deaths', label:'Deaths',            def:13.5},
-  {key:'assists',label:'Assists',           def:4.5},
-  {key:'ka',     label:'Kills + Assists',   def:20.5},
-  {key:'fhk',    label:'First Half Kills',  def:9.5},
-  {key:'fb',     label:'First Bloods',      def:1.5},
-  {key:'acs',    label:'Avg Combat Score',  def:210.5},
+  {key:'kills',  label:'Kills',             def:15.5, max:45},
+  {key:'deaths', label:'Deaths',            def:13.5, max:24},
+  {key:'assists',label:'Assists',           def:4.5,  max:20},
+  {key:'ka',     label:'Kills + Assists',   def:20.5, max:60},
+  {key:'fhk',    label:'First Half Kills',  def:9.5,  max:22},
+  {key:'fb',     label:'First Bloods',      def:1.5,  max:10},
+  {key:'acs',    label:'Avg Combat Score',  def:210.5,max:450},
 ];
 const MULT = {1:1.5, 2:3, 3:5, 4:10, 5:20, 6:25};
 const multFor = n => MULT[n] !== undefined ? MULT[n] : MULT[6] * Math.pow(2, n-6);   // doubles per pick past the hand-tuned table
@@ -565,14 +565,8 @@ function saveName(){
 }
 
 // a usable drag range around the player's real spread for this stat, always landing on .5 endpoints
-function sliderBounds(sk, def, line){
-  // fixed span per stat (never data-dependent, so it can't drift between renders), centered on
-  // wherever the line currently sits — the bar's length always stays the same, only its position moves
-  const half = Math.max(3, def*0.5);
-  const lo = Math.max(0.5, toHalf(line-half));
-  const hi = toHalf(line+half);
-  return [lo, hi];
-}
+// one fixed 0.5–max range per stat, always — never recentered or recomputed off the current line
+function sliderBounds(max){ return [0.5, max]; }
 
 // only meaningful once a direction is actually picked — otherwise there's nothing to show odds for
 // with no pick yet, infer intent from which way the slider's been dragged off the resting line —
@@ -595,7 +589,7 @@ function renderStats(){
     const line = r.lines[s.key];
     const avg = r.avg[s.key];
     const pk = picks.find(x=>x.p===selected && x.s===s.key);
-    const [lo,hi] = sliderBounds(s.key, s.def, line);
+    const [lo,hi] = sliderBounds(s.max);
     return `<div class="stat">
       <div class="stat-head">
         <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
