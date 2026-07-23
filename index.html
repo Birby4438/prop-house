@@ -109,9 +109,21 @@
   .t-foot{font-family:'IBM Plex Mono';font-size:12px;margin-top:6px;color:var(--dim);
     display:flex;justify-content:space-between;align-items:center;gap:8px}
   .t-foot b{color:var(--more)}
+  .t-foot-actions{display:flex;gap:6px}
   .t-cancel{background:none;border:1px solid var(--edge);color:var(--dim);border-radius:6px;
     padding:3px 9px;font-size:11px;cursor:pointer;font-family:'IBM Plex Mono';white-space:nowrap}
   .t-cancel:hover{border-color:var(--less);color:var(--less)}
+  .t-edit{padding-top:4px}
+  .t-edit-row{display:flex;gap:8px;margin-bottom:8px}
+  .t-edit-row input{flex:1;min-width:0}
+  .t-edit-pick{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--edge);font-size:12.5px}
+  .t-edit-pick span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)}
+  .t-edit-pick select{width:70px}
+  .t-edit-pick input{width:66px}
+  .t-edit-row input,.t-edit-pick select,.t-edit-pick input{background:var(--bg);border:1px solid var(--edge);color:var(--ink);
+    border-radius:6px;padding:6px 8px;font-size:12.5px;outline:none;font-family:'IBM Plex Mono'}
+  .t-edit-row input:focus,.t-edit-pick select:focus,.t-edit-pick input:focus{border-color:var(--acc)}
+  .t-edit-actions{display:flex;gap:8px;margin-top:10px}
 
   .empty{color:var(--dim);font-family:'IBM Plex Mono';font-size:12.5px;text-align:center;padding:28px 0}
 
@@ -291,6 +303,7 @@ let tickets = [];  // {id, who, stake, picks:[{p,s,line,dir,pid,pname,result}], 
 let actuals = {};  // "playerId|statKey" -> value
 let editingLine = null;
 let editingName = false;
+let editingTicket = null;
 
 const $ = id => document.getElementById(id);
 const genId = () => 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -603,12 +616,66 @@ function removeTicket(id){
   tickets = tickets.filter(x=>x.id!==id);
   toast(t.status==='pending' ? 'Slip cancelled' : 'Slip deleted');
   ticketsRef.child(id).remove();
+  if(editingTicket===id) editingTicket=null;
+  renderAll();
+}
+function editTicket(id){
+  const t = tickets.find(x=>x.id===id);
+  if(!t || t.status!=='pending') return;
+  editingTicket = id;
+  renderTickets();
+}
+function cancelEditTicket(){ editingTicket=null; renderTickets(); }
+function saveTicketEdit(id){
+  const t = tickets.find(x=>x.id===id);
+  if(!t) return;
+  const who = $('editWho-'+id).value.trim();
+  const stake = Number($('editStake-'+id).value);
+  if(!who) return toast("Name can't be blank");
+  if(!stake || stake<=0) return toast('Enter a valid stake');
+  const picks = [];
+  for(let i=0;i<t.picks.length;i++){
+    const line = toHalf(Number($('editLine-'+id+'-'+i).value));
+    if(isNaN(line)) return toast('Enter a valid line for every pick');
+    picks.push({...t.picks[i], line, dir:$('editDir-'+id+'-'+i).value});
+  }
+  t.who = who; t.stake = stake; t.picks = picks;
+  ticketsRef.child(id).set(t);
+  editingTicket = null;
+  toast('Slip updated');
   renderAll();
 }
 function renderTickets(){
   if(!tickets.length){ $('ticketList').innerHTML='<div class="empty">No slips yet.</div>'; $('standings').innerHTML=''; return; }
   $('ticketList').innerHTML = [...tickets].reverse().map(t=>{
     const tag = {pending:'t-pending',won:'t-won',lost:'t-lost',push:'t-push'}[t.status];
+
+    if(editingTicket===t.id){
+      const pickRows = t.picks.map((x,i)=>`
+        <div class="t-edit-pick">
+          <span>${esc(x.pname)} · ${statLabel(x.s)}</span>
+          <select id="editDir-${t.id}-${i}">
+            <option value="more" ${x.dir==='more'?'selected':''}>More</option>
+            <option value="less" ${x.dir==='less'?'selected':''}>Less</option>
+          </select>
+          <input id="editLine-${t.id}-${i}" type="number" step="0.5" value="${x.line}">
+        </div>`).join('');
+      return `<div class="ticket">
+        <div class="t-head"><span class="who">${esc(t.who)} · ${t.picks.length}-pick</span><span class="t-tag ${tag}">${t.status}</span></div>
+        <div class="t-edit">
+          <div class="t-edit-row">
+            <input id="editWho-${t.id}" value="${esc(t.who)}" placeholder="Name">
+            <input id="editStake-${t.id}" type="number" min="1" value="${t.stake}">
+          </div>
+          ${pickRows}
+          <div class="t-edit-actions">
+            <button class="btn" onclick="saveTicketEdit('${t.id}')">Save</button>
+            <button class="btn-ghost" onclick="cancelEditTicket()">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
     const rows = t.picks.map(x=>{
       const mk = x.result==='win'?'<span class="w">✔</span>':x.result==='loss'?'<span class="l">✘</span>':x.result==='push'?'<span class="p">▬</span>':'·';
       return `<div class="t-pick">${mk} ${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}</div>`;
@@ -617,10 +684,11 @@ function renderTickets(){
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
       : t.status==='push' ? `Stake ${t.stake} refunded`
       : `Stake ${t.stake} → lost`;
+    const editBtn = t.status==='pending' ? `<button class="t-cancel" onclick="editTicket('${t.id}')">Edit</button>` : '';
     const actionBtn = `<button class="t-cancel" onclick="removeTicket('${t.id}')">${t.status==='pending'?'Cancel':'Delete'}</button>`;
     return `<div class="ticket">
       <div class="t-head"><span class="who">${esc(t.who)} · ${t.picks.length}-pick</span><span class="t-tag ${tag}">${t.status}</span></div>
-      ${rows}<div class="t-foot"><span>${foot}</span>${actionBtn}</div></div>`;
+      ${rows}<div class="t-foot"><span>${foot}</span><span class="t-foot-actions">${editBtn}${actionBtn}</span></div></div>`;
   }).join('');
 
   const net = {};
