@@ -576,6 +576,9 @@ function sliderBounds(r, sk, def){
   return [lo, hi];
 }
 
+// only meaningful once a direction is actually picked — otherwise there's nothing to show odds for
+const oddsHintText = (pk, r, sk, line) => pk ? (pk.dir==='more'?'More':'Less')+' '+legFactor(r,sk,line,pk.dir).toFixed(2)+'x' : '';
+
 function renderStats(){
   const r = roster[selected];
   if(!r){ $('statList').innerHTML=''; return; }
@@ -584,8 +587,6 @@ function renderStats(){
     const avg = r.avg[s.key];
     const pk = picks.find(x=>x.p===selected && x.s===s.key);
     const [lo,hi] = sliderBounds(r, s.key, s.def);
-    const moreF = legFactor(r, s.key, line, 'more');
-    const lessF = legFactor(r, s.key, line, 'less');
     return `<div class="stat">
       <div class="stat-head">
         <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
@@ -595,7 +596,7 @@ function renderStats(){
       <div class="stat-slider-row">
         <input class="line-slider" id="lineSlider-${s.key}" type="range" min="${lo}" max="${hi}" step="1" value="${line}"
           oninput="onSlide('${s.key}', this.value)" onchange="commitLine('${s.key}', this.value)">
-        <span class="odds-hint" id="oddsHint-${s.key}">More ${moreF.toFixed(2)}x · Less ${lessF.toFixed(2)}x</span>
+        <span class="odds-hint" id="oddsHint-${s.key}">${oddsHintText(pk, r, s.key, line)}</span>
       </div>
       <div class="stat-btns">
         <button class="dir ${pk&&pk.dir==='less'?'on-less':''}" onclick="pick(${selected},'${s.key}','less')">Less</button>
@@ -612,9 +613,9 @@ function onSlide(sk, val){
   if(isNaN(line)) return;
   const numEl = $('lineNum-'+sk); if(numEl && numEl.value!=val) numEl.value = val;
   const sliderEl = $('lineSlider-'+sk); if(sliderEl && sliderEl.value!=val) sliderEl.value = val;
-  const hintEl = $('oddsHint-'+sk);
-  if(hintEl) hintEl.textContent = 'More '+legFactor(r,sk,line,'more').toFixed(2)+'x · Less '+legFactor(r,sk,line,'less').toFixed(2)+'x';
   const pk = picks.find(x=>x.p===selected && x.s===sk);
+  const hintEl = $('oddsHint-'+sk);
+  if(hintEl) hintEl.textContent = oddsHintText(pk, r, sk, line);
   if(pk){ pk.line = line; pk.factor = legFactor(r, sk, line, pk.dir); renderSlip(); }
 }
 // fires on release/blur — snaps to .5 and persists
