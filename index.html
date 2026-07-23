@@ -59,7 +59,7 @@
     font-family:'IBM Plex Mono';font-size:13px;padding:5px 6px;border-radius:6px;text-align:right;outline:none}
   .line-num:focus{border-color:var(--acc)}
   .stat-slider-row{display:flex;align-items:center;gap:10px}
-  .line-slider{flex:1;accent-color:var(--acc)}
+  .line-slider{flex:1;accent-color:var(--acc);touch-action:none}
   .odds-hint{font-family:'IBM Plex Mono';font-size:10.5px;color:var(--dim);white-space:nowrap}
   .stat-btns{display:flex;gap:10px}
   .dir{flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--edge);background:none;
@@ -600,11 +600,11 @@ function renderStats(){
       <div class="stat-head">
         <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
         <input class="line-num" id="lineNum-${s.key}" type="number" step="0.5" value="${line}"
-          oninput="onSlide('${s.key}', this.value)" onchange="commitLine('${s.key}', this.value)">
+          oninput="onSlide('${s.key}', this.value, 'num')" onchange="commitLine('${s.key}', this.value)">
       </div>
       <div class="stat-slider-row">
         <input class="line-slider" id="lineSlider-${s.key}" type="range" min="${lo}" max="${hi}" step="1" value="${line}"
-          oninput="onSlide('${s.key}', this.value)" onchange="commitLine('${s.key}', this.value)">
+          oninput="onSlide('${s.key}', this.value, 'slider')" onchange="commitLine('${s.key}', this.value)">
         <span class="odds-hint" id="oddsHint-${s.key}">${oddsHintText(pk, r, s.key, line)}</span>
       </div>
       <div class="stat-btns">
@@ -616,12 +616,15 @@ function renderStats(){
 }
 
 // fires continuously while dragging/typing — updates numbers in place without a full re-render so the slider doesn't lose the drag
-function onSlide(sk, val){
+function onSlide(sk, val, source){
   const r = roster[selected];
   const line = Number(val);
   if(isNaN(line)) return;
-  const numEl = $('lineNum-'+sk); if(numEl && numEl.value!=val) numEl.value = val;
-  const sliderEl = $('lineSlider-'+sk); if(sliderEl && sliderEl.value!=val) sliderEl.value = val;
+  // only ever write into the OTHER control — reassigning a range input's own .value while it's
+  // actively being dragged resets the browser's internal drag state and stops the drag dead,
+  // especially on touch
+  if(source!=='num'){ const numEl=$('lineNum-'+sk); if(numEl) numEl.value = val; }
+  if(source!=='slider'){ const sliderEl=$('lineSlider-'+sk); if(sliderEl) sliderEl.value = val; }
   const pk = picks.find(x=>x.p===selected && x.s===sk);
   const hintEl = $('oddsHint-'+sk);
   if(hintEl) hintEl.textContent = oddsHintText(pk, r, sk, line);
