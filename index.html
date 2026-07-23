@@ -50,14 +50,19 @@
   .p-remove:hover{border-color:var(--less);color:var(--less)}
   .board-note{color:var(--dim);font-size:12.5px;margin:0 2px 14px}
 
-  .stat{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--edge);
+  .stat{display:flex;flex-direction:column;gap:8px;background:var(--panel);border:1px solid var(--edge);
     border-radius:10px;padding:10px 12px;margin-bottom:8px}
-  .stat .name{flex:1;font-weight:500}
-  .stat .name .avg{display:block;font-family:'IBM Plex Mono';font-size:10.5px;color:var(--dim);font-weight:400}
-  .stat .line{font-family:'IBM Plex Mono';color:var(--ink);width:60px;text-align:right;cursor:pointer}
-  .stat .line input{width:60px;background:var(--bg);border:1px solid var(--edge);color:var(--ink);
-    font-family:'IBM Plex Mono';font-size:13px;padding:3px 4px;border-radius:5px;text-align:right;outline:none}
-  .dir{width:60px;padding:8px 0;border-radius:8px;border:1px solid var(--edge);background:none;
+  .stat-head{display:flex;align-items:center;gap:10px}
+  .stat-head .name{flex:1;font-weight:500}
+  .stat-head .name .avg{display:block;font-family:'IBM Plex Mono';font-size:10.5px;color:var(--dim);font-weight:400}
+  .line-num{width:66px;background:var(--bg);border:1px solid var(--edge);color:var(--ink);
+    font-family:'IBM Plex Mono';font-size:13px;padding:5px 6px;border-radius:6px;text-align:right;outline:none}
+  .line-num:focus{border-color:var(--acc)}
+  .stat-slider-row{display:flex;align-items:center;gap:10px}
+  .line-slider{flex:1;accent-color:var(--acc)}
+  .odds-hint{font-family:'IBM Plex Mono';font-size:10.5px;color:var(--dim);white-space:nowrap}
+  .stat-btns{display:flex;gap:10px}
+  .dir{flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--edge);background:none;
     color:var(--dim);cursor:pointer;font-size:12px;font-weight:600}
   .dir:hover{color:var(--ink)}
   .dir.on-more{background:rgba(61,220,151,.12);border-color:var(--more);color:var(--more)}
@@ -339,7 +344,6 @@ let selected = 0;
 let picks = [];    // {p, s, line, dir}
 let tickets = [];  // {id, who, stake, picks:[{p,s,line,dir,pid,pname,result}], status, payout}
 let actuals = {};  // "playerId|statKey" -> value
-let editingLine = null;
 let editingName = false;
 let editingTicket = null;
 
@@ -544,7 +548,7 @@ function renderRoster(){
   } else { $('pname').textContent=''; $('psrc').textContent=''; }
   $('pRemove').classList.toggle('hide', !r);
 }
-function selectPlayer(i){ selected=i; editingLine=null; renderAll(); }
+function selectPlayer(i){ selected=i; renderAll(); }
 function removeSelectedPlayer(){
   const r = roster[selected];
   if(!r) return;
@@ -560,6 +564,18 @@ function saveName(){
   pushRoster(); renderAll();
 }
 
+// a usable drag range around the player's real spread for this stat, always landing on .5 endpoints
+function sliderBounds(r, sk, def){
+  const samples = r.samples && r.samples[sk];
+  const avg = r.avg && r.avg[sk];
+  const center = avg!==undefined ? avg : def;
+  const spread = (samples && samples.length>1) ? (Math.max(...samples)-Math.min(...samples)) : center*0.6;
+  const half = Math.max(3, spread*0.9, center*0.4);
+  const lo = Math.max(0.5, toHalf(center-half));
+  const hi = Math.max(lo+3, toHalf(center+half));
+  return [lo, hi];
+}
+
 function renderStats(){
   const r = roster[selected];
   if(!r){ $('statList').innerHTML=''; return; }
@@ -567,30 +583,50 @@ function renderStats(){
     const line = r.lines[s.key];
     const avg = r.avg[s.key];
     const pk = picks.find(x=>x.p===selected && x.s===s.key);
-    const lineHtml = editingLine===s.key
-      ? `<span class="line"><input id="lineEdit" type="number" step="0.5" value="${line}"
-           onblur="saveLine('${s.key}')" onkeydown="if(event.key==='Enter')this.blur()"></span>`
-      : `<span class="line" onclick="editLine('${s.key}')" title="Edit line">${line}</span>`;
+    const [lo,hi] = sliderBounds(r, s.key, s.def);
+    const moreF = legFactor(r, s.key, line, 'more');
+    const lessF = legFactor(r, s.key, line, 'less');
     return `<div class="stat">
-      <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
-      ${lineHtml}
-      <button class="dir ${pk&&pk.dir==='less'?'on-less':''}" onclick="pick(${selected},'${s.key}','less')">Less</button>
-      <button class="dir ${pk&&pk.dir==='more'?'on-more':''}" onclick="pick(${selected},'${s.key}','more')">More</button>
+      <div class="stat-head">
+        <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
+        <input class="line-num" id="lineNum-${s.key}" type="number" step="0.5" value="${line}"
+          oninput="onSlide('${s.key}', this.value)" onchange="commitLine('${s.key}', this.value)">
+      </div>
+      <div class="stat-slider-row">
+        <input class="line-slider" id="lineSlider-${s.key}" type="range" min="${lo}" max="${hi}" step="1" value="${line}"
+          oninput="onSlide('${s.key}', this.value)" onchange="commitLine('${s.key}', this.value)">
+        <span class="odds-hint" id="oddsHint-${s.key}">More ${moreF.toFixed(2)}x · Less ${lessF.toFixed(2)}x</span>
+      </div>
+      <div class="stat-btns">
+        <button class="dir ${pk&&pk.dir==='less'?'on-less':''}" onclick="pick(${selected},'${s.key}','less')">Less</button>
+        <button class="dir ${pk&&pk.dir==='more'?'on-more':''}" onclick="pick(${selected},'${s.key}','more')">More</button>
+      </div>
     </div>`;
   }).join('');
-  if(editingLine){ const el=$('lineEdit'); if(el){ el.focus(); el.select(); } }
 }
-function editLine(sk){ editingLine=sk; renderStats(); }
-function saveLine(sk){
-  const raw = Number($('lineEdit').value);
-  if(!isNaN(raw)){
-    const v = toHalf(raw);   // always end in .5, same as synced lines
-    roster[selected].lines[sk]=v;
-    const pk = picks.find(x=>x.p===selected && x.s===sk);
-    if(pk){ pk.line = v; pk.factor = legFactor(roster[selected], sk, v, pk.dir); }
-    pushRoster();
-  }
-  editingLine=null; renderAll();
+
+// fires continuously while dragging/typing — updates numbers in place without a full re-render so the slider doesn't lose the drag
+function onSlide(sk, val){
+  const r = roster[selected];
+  const line = Number(val);
+  if(isNaN(line)) return;
+  const numEl = $('lineNum-'+sk); if(numEl && numEl.value!=val) numEl.value = val;
+  const sliderEl = $('lineSlider-'+sk); if(sliderEl && sliderEl.value!=val) sliderEl.value = val;
+  const hintEl = $('oddsHint-'+sk);
+  if(hintEl) hintEl.textContent = 'More '+legFactor(r,sk,line,'more').toFixed(2)+'x · Less '+legFactor(r,sk,line,'less').toFixed(2)+'x';
+  const pk = picks.find(x=>x.p===selected && x.s===sk);
+  if(pk){ pk.line = line; pk.factor = legFactor(r, sk, line, pk.dir); renderSlip(); }
+}
+// fires on release/blur — snaps to .5 and persists
+function commitLine(sk, val){
+  const raw = Number(val);
+  if(isNaN(raw)) return;
+  const line = toHalf(raw);
+  roster[selected].lines[sk] = line;
+  const pk = picks.find(x=>x.p===selected && x.s===sk);
+  if(pk){ pk.line = line; pk.factor = legFactor(roster[selected], sk, line, pk.dir); }
+  pushRoster();
+  renderAll();
 }
 
 function pick(p, s, dir){
