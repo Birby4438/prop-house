@@ -107,6 +107,9 @@
   .lb-row:nth-child(1) .lb-rank{color:var(--acc)}
   .lb-name{flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lb-bal{font-family:'IBM Plex Mono';font-weight:600;color:var(--ink)}
+  .lb-adjust{background:none;border:1px solid var(--edge);color:var(--dim);border-radius:6px;
+    width:24px;height:24px;flex:none;cursor:pointer;font-size:14px;line-height:1}
+  .lb-adjust:hover{border-color:var(--acc);color:var(--acc)}
   .pick{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--edge);font-size:13px}
   .pick .d-more{color:var(--more);font-weight:600}
   .pick .d-less{color:var(--less);font-weight:600}
@@ -751,6 +754,14 @@ function allBettors(){
   });
   return names;
 }
+function adjustBalance(label){
+  const amt = Number(prompt('Add how much to '+label+"'s balance? (negative to subtract)", '0'));
+  if(!amt || isNaN(amt)) return;
+  const k = label.trim().toLowerCase();
+  startingBalances[k] = startingBalance(label) + amt;
+  balancesRef.set(startingBalances);
+  toast(label+"'s balance adjusted by "+(amt>0?'+':'')+amt);
+}
 function renderLeaderboard(){
   const entries = [...allBettors().entries()].map(([k,label])=>({label, balance: balanceFor(label)}));
   entries.sort((a,b)=>b.balance-a.balance);
@@ -759,6 +770,7 @@ function renderLeaderboard(){
       <span class="lb-rank">#${i+1}</span>
       <span class="lb-name">${esc(e.label)}</span>
       <span class="lb-bal">${e.balance.toFixed(0)}</span>
+      <button class="lb-adjust" onclick="adjustBalance('${e.label.replace(/'/g,"\\'")}')" title="Add/subtract money">+</button>
     </div>`).join('') : '<div class="empty">No bettors yet.</div>';
 }
 
