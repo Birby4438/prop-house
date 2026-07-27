@@ -712,15 +712,22 @@ function onSlide(sk, val, source){
   if(pk){ pk.line = line; pk.odds = legOdds(r, sk, line, pk.dir); renderSlip(); }
 }
 // fires on release/blur — snaps to .5 and persists
+const lineCommitTimers = {};
 function commitLine(sk, val){
   const raw = Number(val);
   if(isNaN(raw)) return;
   const line = toHalf(raw);
+  // apply locally right away — the person adjusting it sees it settle instantly
   roster[selected].lines[sk] = line;
   const pk = picks.find(x=>x.p===selected && x.s===sk);
   if(pk){ pk.line = line; pk.odds = legOdds(roster[selected], sk, line, pk.dir); }
-  pushRoster();
   renderAll();
+  // but debounce the actual broadcast to everyone else — a range input's 'change' event can
+  // still fire repeatedly in quick succession (re-drags, holding an arrow key while focused),
+  // and without this every one of those synced immediately, which is what made it look like
+  // the slider was visibly moving in real time on other people's screens
+  clearTimeout(lineCommitTimers[sk]);
+  lineCommitTimers[sk] = setTimeout(()=>{ pushRoster(); }, 500);
 }
 
 function pick(p, s, dir){
