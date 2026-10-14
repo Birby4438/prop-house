@@ -317,7 +317,7 @@ const STATS = [
   {key:'ka',     label:'Kills + Assists',   def:20.5, max:60},
   {key:'fhk',    label:'First Half Kills',  def:9.5,  max:22},
   {key:'fb',     label:'First Bloods',      def:1.5,  max:10},
-  {key:'acs',    label:'Avg Combat Score',  def:210.5,max:450},
+  {key:'perf',   label:'Performance Score', def:250.5,max:500},
 ];
 // derives status/payout from each pick's current result — shared by grading and by manual result corrections
 function regradeTicket(t){
@@ -431,7 +431,8 @@ let editingTicket = null;
 const $ = id => document.getElementById(id);
 const genId = () => 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const key = (p,s) => roster[p].id + '|' + s;
-const statLabel = s => (STATS.find(x=>x.key===s) || {label:s}).label;   // old tickets can reference a since-removed stat key
+const RETIRED_STAT_LABELS = {acs:'Avg Combat Score'};   // removed stats still named on old tickets (ACS → Performance Score in patch 13.06)
+const statLabel = s => (STATS.find(x=>x.key===s) || {label: RETIRED_STAT_LABELS[s] || s}).label;   // old tickets can reference a since-removed stat key
 const fresh = () => Object.fromEntries(STATS.map(s=>[s.key, s.def]));
 
 let toastTimer;
@@ -456,7 +457,7 @@ function loadSetup(){
   rosterRef.on('value', snap=>{
     // Firebase drops empty objects/arrays on write (e.g. a never-synced player's avg:{}),
     // so they come back as undefined instead of {} — patch defaults back in after every snapshot.
-    roster = (Array.isArray(snap.val()) ? snap.val() : []).map(r=>({...r, lines: r.lines || fresh(), avg: r.avg || {}, accounts: r.accounts || [], samples: r.samples || {}}));
+    roster = (Array.isArray(snap.val()) ? snap.val() : []).map(r=>({...r, lines: {...fresh(), ...(r.lines||{})}, avg: r.avg || {}, accounts: r.accounts || [], samples: r.samples || {}}));
     if(selected>=roster.length) selected = Math.max(0, roster.length-1);
     rosterLoaded = true;
     renderAll();
@@ -545,27 +546,28 @@ async function hd(path){
 }
 
 function matchRowFor(m, account){
-  // pull one linked account's stat line out of a single v3 match object, or null if they weren't in it
-  const rounds = m.metadata && m.metadata.rounds_played;
-  const me = ((m.players||{}).all_players||[]).find(p=>
+  // pull one linked account's stat line out of a single v4 match object, or null if they weren't in it
+  const rounds = (m.rounds||[]).length;
+  const me = (m.players||[]).find(p=>
     p.name && p.name.toLowerCase()===account.name.toLowerCase() && p.tag && p.tag.toLowerCase()===account.tag.toLowerCase());
   if(!me || !me.stats || !rounds) return null;
   const st = me.stats;
   const kills = m.kills || [];
   // first half is always rounds 0-11 regardless of overtime (regulation is first-to-13, sides swap after round 12)
-  const fhk = kills.filter(k=>k.round<12 && k.killer_puuid===me.puuid).length;
+  const fhk = kills.filter(k=>k.round<12 && k.killer && k.killer.puuid===me.puuid).length;
   const firstPerRound = new Map();
   kills.forEach(k=>{
     const cur = firstPerRound.get(k.round);
-    if(!cur || k.kill_time_in_round<cur.kill_time_in_round) firstPerRound.set(k.round, k);
+    if(!cur || k.time_in_round_in_ms<cur.time_in_round_in_ms) firstPerRound.set(k.round, k);
   });
-  const fb = [...firstPerRound.values()].filter(k=>k.killer_puuid===me.puuid).length;
+  const fb = [...firstPerRound.values()].filter(k=>k.killer && k.killer.puuid===me.puuid).length;
   return {
     kills: st.kills||0, deaths: st.deaths||0, assists: st.assists||0,
     ka: (st.kills||0)+(st.assists||0),
     fhk, fb,
-    acs: rounds ? (st.score||0)/rounds : null,
-    gameStart: (m.metadata && m.metadata.game_start) || 0,
+    // Riot's 0-500 Performance Score (replaced ACS in patch 13.06) — null on pre-13.06 matches, which the averaging skips
+    perf: (me.performance && me.performance.score!=null) ? me.performance.score : null,
+    gameStart: (m.metadata && Date.parse(m.metadata.started_at)) || 0,
   };
 }
 
@@ -585,7 +587,7 @@ async function syncPlayer(i){
     const failures = [];
     for(const acct of accounts){
       try{
-        const json = await hd('/valorant/v3/matches/'+acct.region+'/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?mode=competitive&size='+SYNC_MATCHES);
+        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?mode=competitive&size='+SYNC_MATCHES);
         (json.data||[]).forEach(m=>{ const row = matchRowFor(m, acct); if(row) pool.push(row); });
       }catch(e){ failures.push(acct.riot); }
     }
@@ -965,7 +967,7 @@ async function autofill(){
     let best = null;
     for(const acct of r.accounts){
       try{
-        const json = await hd('/valorant/v3/matches/'+acct.region+'/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?size=1');
+        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?size=1');
         (json.data||[]).forEach(m=>{
           const row = matchRowFor(m, acct);
           if(row && (!best || row.gameStart>best.gameStart)) best = row;
