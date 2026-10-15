@@ -34,7 +34,8 @@
   header{position:sticky;top:0;z-index:40;margin-bottom:18px;background:rgba(10,10,12,.72);
     backdrop-filter:saturate(160%) blur(14px);-webkit-backdrop-filter:saturate(160%) blur(14px);border-bottom:1px solid var(--edge)}
   .header-in{max-width:960px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:16px;letter-spacing:-.02em}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:16px;letter-spacing:-.02em;color:inherit;text-decoration:none;border-radius:10px}
+  .logo:hover .logo-mark{box-shadow:0 4px 18px -2px rgba(139,124,255,.9)}
   .logo-mark{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none;
     background:linear-gradient(135deg,#A99CFF,#6B5BFF);color:#fff;font-size:13px;font-weight:800;box-shadow:0 4px 14px -4px rgba(139,124,255,.7)}
   .logo-txt span{color:var(--dim);font-weight:600}
@@ -74,8 +75,13 @@
   .land-card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-lg);padding:14px;margin-bottom:12px}
   .land-card>label{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:8px}
   .land-warn{border-color:rgba(251,113,133,.4);background:var(--less-soft);color:var(--less);font-size:13px}
-  .recent{display:flex;align-items:center;gap:10px;padding:9px 4px;border-top:1px solid var(--edge);color:var(--ink);text-decoration:none;font-weight:600;font-size:14px}
+  .recent{display:flex;align-items:center;gap:6px;border-top:1px solid var(--edge)}
   .recent:first-child{border-top:0}
+  .recent-open{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:9px 4px;color:var(--ink);text-decoration:none;font-weight:600;font-size:14px}
+  .recent-open .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .recent-x{flex:none;width:30px;height:30px;border-radius:8px;border:1px solid transparent;background:none;color:var(--faint);cursor:pointer;font-size:12px}
+  .recent-x:hover{color:var(--less);border-color:rgba(251,113,133,.4);background:var(--less-soft)}
+  .gm-danger{color:var(--less)!important}
   .recent .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--acc-soft);color:var(--acc);font-size:12px;font-weight:700;text-transform:uppercase;flex:none}
   .recent .go{margin-left:auto;color:var(--acc);font-size:12.5px;font-weight:600}
   @media (max-width:480px){ .land h1{font-size:25px} .land{margin-top:16px} .group-menu{left:auto;right:0} }
@@ -86,6 +92,9 @@
   .board-mode button:hover{color:var(--ink)}
   .board-mode button.on{color:var(--ink);background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--edge-2),0 1px 2px rgba(0,0,0,.4)}
   .board-mode button#mode-combo.on{color:var(--acc)}
+  .tf-n{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:999px;background:var(--panel-2);color:var(--dim);font-size:11px;font-weight:700;line-height:18px;font-variant-numeric:tabular-nums}
+  .tf-n:empty{display:none}
+  .board-mode button.on .tf-n{background:var(--acc-soft);color:var(--acc)}
   .combo-tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--acc);
     background:var(--acc-soft);padding:1px 6px;border-radius:999px;vertical-align:1px;margin-right:2px}
 
@@ -346,7 +355,7 @@
 <header>
   <div class="header-in">
     <div class="brand">
-      <div class="logo"><span class="logo-mark">P</span><span class="logo-txt">Prop<span>House</span></span></div>
+      <a class="logo" href="./" title="PropHouse home — create or join a group"><span class="logo-mark">P</span><span class="logo-txt">Prop<span>House</span></span></a>
       <div class="group-wrap">
         <button class="group-btn" id="groupBtn" onclick="toggleGroupMenu()" title="Group & invite link"><span class="dot"></span><span id="groupName">Group</span><span class="chev">▾</span></button>
         <div class="group-menu hide" id="groupMenu">
@@ -355,6 +364,7 @@
           <div class="gm-note">Anyone with this link can see this group's roster and place bets. Only share it with your group.</div>
           <button class="gm-item" onclick="renameGroup()">Rename group</button>
           <button class="gm-item" onclick="leaveGroup()">Switch or create a group</button>
+          <button class="gm-item gm-danger" onclick="leaveThisGroup()">Leave this group</button>
         </div>
       </div>
     </div>
@@ -400,6 +410,7 @@
   <!-- TICKETS -->
   <section id="tab-tickets" class="hide">
     <div class="standings" id="standings"></div>
+    <div class="board-mode ticket-filter"><button id="tf-open" class="on" onclick="setTicketFilter('open')">Open <span class="tf-n" id="tfOpenN"></span></button><button id="tf-settled" onclick="setTicketFilter('settled')">Settled <span class="tf-n" id="tfSettledN"></span></button></div>
     <div id="ticketList"></div>
   </section>
 
@@ -1291,9 +1302,19 @@ function saveTicketEdit(id){
   toast('Slip updated');
   renderAll();
 }
+let ticketFilter = 'open';   // Tickets tab: 'open' (still pending) | 'settled' (won / lost / pushed)
+function setTicketFilter(f){ ticketFilter = f; editingTicket = null; renderTickets(); }
 function renderTickets(){
+  const open = tickets.filter(t=>t.status==='pending'), settled = tickets.filter(t=>t.status!=='pending');
+  $('tf-open').classList.toggle('on', ticketFilter==='open');
+  $('tf-settled').classList.toggle('on', ticketFilter==='settled');
+  $('tfOpenN').textContent = open.length || '';
+  $('tfSettledN').textContent = settled.length || '';
   if(!tickets.length){ $('ticketList').innerHTML='<div class="empty">No slips yet.</div>'; $('standings').innerHTML=''; return; }
-  $('ticketList').innerHTML = [...tickets].reverse().map(t=>{
+  const shown = ticketFilter==='open' ? open : settled;
+  if(!shown.length){
+    $('ticketList').innerHTML = `<div class="empty">${ticketFilter==='open' ? 'No open slips — everything has settled. Build a new slip on the Board.' : 'Nothing has settled yet — slips land here once their games are graded.'}</div>`;
+  } else $('ticketList').innerHTML = [...shown].reverse().map(t=>{
     const tag = {pending:'t-pending',won:'t-won',lost:'t-lost',push:'t-push'}[t.status];
 
     if(editingTicket===t.id){
@@ -1601,7 +1622,21 @@ function showLanding(notFound){
   $('landNotFound').classList.toggle('hide', !notFound);
   const rec = recentGroups().filter(g=>g.id!==GROUP_ID);
   $('recentGroups').classList.toggle('hide', !rec.length);
-  $('recentList').innerHTML = rec.map(g=>`<a class="recent" href="#g=${g.id}"><span class="av">${esc((g.name||'?').trim().charAt(0)||'?')}</span><span>${esc(g.name||'Unnamed group')}</span><span class="go">Open →</span></a>`).join('');
+  $('recentList').innerHTML = rec.map(g=>`<div class="recent"><a class="recent-open" href="#g=${g.id}"><span class="av">${esc((g.name||'?').trim().charAt(0)||'?')}</span><span class="nm">${esc(g.name||'Unnamed group')}</span><span class="go">Open →</span></a><button class="recent-x" onclick="removeRecent('${g.id}')" title="Remove from this device" aria-label="Remove ${esc(g.name||'group')} from this device">✕</button></div>`).join('');
+}
+// "leaving" a group just forgets it on this device — the group carries on for everyone else, and its invite link still works
+function removeRecent(id){
+  const g = recentGroups().find(x=>x.id===id);
+  if(!confirm(`Remove "${(g&&g.name)||'this group'}" from this device?\n\nThe group keeps going for everyone else. To get back in later you'll need its invite link.`)) return;
+  forgetGroup(id);
+  showLanding(false);
+  toast('Removed from this device');
+}
+function leaveThisGroup(){
+  toggleGroupMenu(false);
+  if(!confirm(`Leave "${groupName||'this group'}" on this device?\n\nThe group keeps going for everyone else. To get back in later you'll need its invite link — copy it first if you might want it.`)) return;
+  forgetGroup(GROUP_ID);
+  location.href = './';
 }
 function createGroup(){
   const name = ($('newGroupName').value.trim() || 'My group').slice(0,40);
