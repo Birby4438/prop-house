@@ -782,6 +782,7 @@ async function hd(path){
   const res = await fetch(API+path);
   if(res.status===404) throw new Error('Player not found — check Riot ID and region');
   if(res.status===429) throw new Error('Rate limited — wait a minute and retry');
+  if(res.status===403) throw new Error('The stats proxy only works on the PropHouse site itself — open it from its GitHub Pages link');
   if(!res.ok) throw new Error('API error '+res.status);
   return res.json();
 }

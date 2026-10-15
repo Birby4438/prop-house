@@ -23,7 +23,7 @@ python3 -m http.server 8000
 
 - `index.html` — the app. Calls the HenrikDev API through a proxy (see below) and reads/writes the group's data under `groups/<code>/` in Firebase Realtime Database.
 - `database.rules.json` — the Realtime Database security rules (see below).
-- `worker/` — a Cloudflare Worker that proxies requests to the HenrikDev API, attaching the real API key server-side so it's never shipped to the browser. Deployed with `wrangler deploy` from inside `worker/`; the key itself is stored as an encrypted Cloudflare secret (`wrangler secret put HENRIK_KEY`), not in this repo.
+- `worker/` — a Cloudflare Worker that proxies requests to the HenrikDev API, attaching the real API key server-side so it's never shipped to the browser. It only answers requests from the PropHouse site (and `localhost` for development), only forwards the match-history endpoint the app uses, limits each visitor to 40 requests a minute, and answers repeat requests within a minute from memory. Deployed with `npx wrangler deploy` from inside `worker/`; the key itself is stored as an encrypted Cloudflare secret (`npx wrangler secret put HENRIK_KEY`), not in this repo. If the site moves to a new address, add it to `ALLOWED_ORIGINS` in `worker/src/index.js` and redeploy.
 
 ## Database rules
 
@@ -39,4 +39,4 @@ To publish changes: Firebase console → Realtime Database → **Rules** → pas
 ## Notes
 
 - The Firebase config in `index.html` is a public client config (safe by design — Firebase security comes from database rules, not secrecy).
-- All groups share one HenrikDev API key through the proxy, so heavy use across many groups will hit its rate limit sooner.
+- All groups share one HenrikDev API key through the proxy, so heavy use across many groups will hit HenrikDev's own rate limit sooner; the per-visitor limit and cache soften that, a higher-tier key fixes it.
