@@ -9,6 +9,7 @@ Single static HTML file, no build step. Each friend group gets its own private b
 Open the GitHub Pages URL for this repo and either **create a group** or paste an **invite link**. To bring friends in, open the group menu (the group name in the header) and copy the invite link.
 
 - A group is identified by a long random code in the link (`…/#g=<code>`). The code lives in the URL fragment, which browsers never send to any server.
+- Bets grade themselves: each one settles from the player's next full competitive game (13+ rounds) that starts after the bet was placed — for a combo, the next such game all its players are in. Whoever has the site open does the checking (on load, then every few minutes while the tab is visible); the Settle tab can still grade or correct anything by hand.
 - Anyone with the link can see that group's roster and place bets — share it only with the group. There are no accounts; losing the link means losing access (each device remembers groups it has opened on the start screen).
 
 ## Local dev

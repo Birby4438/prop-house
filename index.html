@@ -271,6 +271,19 @@
   .empty{color:var(--faint);font-size:13px;text-align:center;padding:48px 16px;border:1px dashed var(--edge-2);border-radius:var(--r-lg)}
   .slip .empty,.lb-panel .empty{border:none;padding:36px 0}
 
+  /* settle: auto-grade card */
+  .auto-card{background:var(--panel);border:1px solid rgba(52,211,153,.25);border-radius:var(--r-lg);padding:14px;margin-bottom:16px}
+  .auto-top{display:flex;align-items:center;gap:9px;font-size:14px}
+  .auto-top b{flex:1}
+  .auto-dot{width:8px;height:8px;border-radius:50%;background:var(--more);box-shadow:0 0 0 4px var(--more-soft);flex:none}
+  .auto-btn{padding:7px 12px!important;font-size:12.5px!important}
+  .auto-text{color:var(--dim);font-size:12.5px;line-height:1.55;margin-top:8px}
+  .auto-text b{color:var(--ink);font-weight:600}
+  .auto-status{color:var(--faint);font-size:12px;margin-top:8px;font-variant-numeric:tabular-nums}
+  .auto-status:empty{display:none}
+  .t-pick .final{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+  .t-pick .waiting{color:var(--faint);font-size:11.5px}
+
   /* settle */
   #settleList{display:grid;gap:8px}
   .s-row{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-md);padding:12px 14px}
@@ -392,7 +405,12 @@
 
   <!-- SETTLE -->
   <section id="tab-settle" class="hide">
-    <div class="board-note">Pull finals straight from each player's most recent match, or type them in. Exact hits push — the pick drops and the multiplier adjusts.</div>
+    <div class="auto-card">
+      <div class="auto-top"><span class="auto-dot"></span><b>Auto-grading is on</b><button class="btn btn-ghost auto-btn" id="autoGradeBtn" onclick="autoGrade(true)">Check now</button></div>
+      <div class="auto-text">Every bet settles from each player's <b>next full competitive game</b> that starts after the bet was placed — for a combo, the next one they're all in. Remakes and games under 13 rounds are skipped. It checks whenever someone has PropHouse open.</div>
+      <div class="auto-status" id="autoStatus"></div>
+    </div>
+    <div class="board-note">Grade by hand to fix or override anything: pull finals from each player's latest match, or type them in. Exact hits push — the pick drops and the multiplier adjusts.</div>
     <div id="settleList"></div>
     <div class="settle-actions hide" id="settleActions">
       <button class="btn btn-ghost" id="autofillBtn" onclick="autofill()">Pull last match</button>
@@ -1216,7 +1234,7 @@ function placeSlip(){
   const bal = balanceFor(who);
   if(stake > bal) return toast(who+"'s balance is "+bal.toFixed(0)+' — lower your stake');
   const id = ticketsRef.push().key;   // unique key generated client-side, no counter to collide on
-  const ticket = { id, who, stake,
+  const ticket = { id, who, stake, placedAt: firebase.database.ServerValue.TIMESTAMP,
     picks: picks.map(x=>x.cid
       ? ({cid:x.cid, members:x.members, s:x.s, line:x.line, dir:x.dir, odds:x.odds, pid:x.cid, pname:pickName(x), result:null})
       : ({...x, pid:roster[x.p].id, pname:displayName(roster[x.p]), result:null})),
@@ -1312,7 +1330,9 @@ function renderTickets(){
 
     const rows = t.picks.map(x=>{
       const mk = x.result==='win'?'<span class="w">✔</span>':x.result==='loss'?'<span class="l">✘</span>':x.result==='push'?'<span class="p">▬</span>':'<span class="o"></span>';
-      return `<div class="t-pick">${mk} <span>${x.cid?'<span class="combo-tag">Combo</span> ':''}${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}</span></div>`;
+      const tail = x.final!==undefined && x.final!==null ? ` <span class="final">→ ${x.final}</span>`
+        : (!x.result && t.status==='pending') ? ' <span class="waiting">· waiting for next game</span>' : '';
+      return `<div class="t-pick">${mk} <span>${x.cid?'<span class="combo-tag">Combo</span> ':''}${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}${tail}</span></div>`;
     }).join('');
     const foot = t.status==='pending' ? `Stake ${t.stake} · ${slipMultiplier(t.picks)}x if perfect`
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
@@ -1399,6 +1419,134 @@ async function autofill(){
   pushActuals(); renderSettle();
 }
 
+/* ---- auto-grading ----
+   A bet is graded from the game it was a bet on: each player's next full competitive game that
+   STARTS after the bet was placed (so a game already underway when you bet can't settle it), and
+   for a combo the next such game every member is in. Whoever has the site open does the checking;
+   each ticket is updated in a transaction, so two people grading at once can't clash, and a ticket
+   cancelled meanwhile stays cancelled. */
+const AUTO_EVERY_MS = 4*60*1000;
+const AUTO_MIN_ROUNDS = 13;   // shorter = remake or early surrender: wait for a real game instead
+const AUTO_PAGE = 10;         // games fetched per account per check (the API's max per request)
+let autoBusy = false, autoLastRun = 0, autoLastMsg = '';
+const PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
+function pushIdTime(id){   // Firebase push ids start with their creation time — how older tickets (before placedAt) are dated
+  if(typeof id!=='string' || id.length<8) return 0;
+  let t = 0;
+  for(let i=0;i<8;i++){ const v = PUSH_CHARS.indexOf(id[i]); if(v<0) return 0; t = t*64 + v; }
+  return t;
+}
+const ticketPlacedAt = t => typeof t.placedAt==='number' ? t.placedAt : pushIdTime(t.id);
+const matchStart = m => Date.parse(m.metadata && m.metadata.started_at) || 0;
+const fullGame = m => (m.rounds||[]).length >= AUTO_MIN_ROUNDS && !(m.metadata && m.metadata.is_completed===false);
+// one player's recent competitive games, newest first, across their accounts, plus how far back that
+// list is known to be complete: an account that returned a full page may have older games we didn't see
+async function recentFor(r){
+  const out = new Map(); let completeSince = -Infinity;
+  for(const acct of r.accounts){
+    const {puuid, matches} = await fetchMatches(acct, '?mode=competitive&size='+AUTO_PAGE);
+    const who = {...acct, puuid: puuid || acct.puuid};
+    if(matches.length>=AUTO_PAGE) completeSince = Math.max(completeSince, Math.min(...matches.map(matchStart)));
+    matches.forEach(m=>{ if(findPlayer(m, who)) out.set(m.metadata.match_id, {m, acct: who}); });
+  }
+  return {games: [...out.values()].sort((a,b)=>matchStart(b.m)-matchStart(a.m)), completeSince};
+}
+function rowForPlayer(m, r, hint){
+  for(const a of (hint ? [hint, ...r.accounts] : r.accounts)){ const row = matchRowFor(m, a); if(row) return row; }
+  return null;
+}
+// the stat line that grades a leg placed at `since`: null if that game hasn't happened yet,
+// 'too-old' if the bet is older than the games we can see (so the right game can't be pinned down)
+function gradingLine(members, since, recent){
+  const lead = recent.get(members[0].id);
+  if(!lead) return null;
+  if(lead.completeSince > since) return 'too-old';
+  const candidates = lead.games.filter(g=>matchStart(g.m) > since && fullGame(g.m)).reverse();   // oldest first
+  for(const g of candidates){
+    const rows = members.map((r,i)=>rowForPlayer(g.m, r, i===0 ? g.acct : null));
+    if(!rows.every(Boolean)) continue;   // combo: not everyone was in this one
+    const line = {matchId: g.m.metadata.match_id};
+    STATS.forEach(s=>{ const v = rows.map(x=>x[s.key]); line[s.key] = v.some(x=>x===null || x===undefined) ? null : v.reduce((a,b)=>a+b,0); });
+    return line;
+  }
+  return null;
+}
+const legResult = (final, x) => final===x.line ? 'push' : (final>x.line)===(x.dir==='more') ? 'win' : 'loss';
+// the grading step itself: the stored ticket with these legs graded, or undefined to leave it alone
+function applyGrades(cur, grades){
+  if(!cur || cur.status!=='pending' || !Array.isArray(cur.picks)) return;   // gone, cancelled, or already settled
+  let changed = false;
+  grades.forEach(g=>{
+    const x = cur.picks[g.i];
+    if(!x || x.result!=null || x.pid!==g.pid || x.s!==g.s || x.line!==g.line || x.dir!==g.dir) return;   // edited meanwhile
+    Object.assign(x, {result: g.result, final: g.final, gradedFrom: g.matchId}); changed = true;
+  });
+  if(!changed) return;
+  regradeTicket(cur);
+  return cur;
+}
+// applies it atomically to the shared ticket; resolves to the committed ticket, or null if nothing changed
+function commitGrade(id, grades){
+  return ticketsRef.child(id).transaction(cur=>applyGrades(cur, grades)).then(res=>res.committed ? res.snapshot.val() : null);
+}
+async function autoGrade(manual){
+  if(autoBusy || !ticketsRef || !rosterLoaded) return;
+  const pending = tickets.filter(t=>t.status==='pending' && Array.isArray(t.picks) && t.picks.some(x=>x.result==null));
+  if(!pending.length){ autoLastRun = Date.now(); autoLastMsg = 'Nothing waiting to be graded.'; renderAutoStatus(); if(manual) toast('Nothing waiting to be graded'); return; }
+  autoBusy = true; const btn = $('autoGradeBtn'); if(btn){ btn.disabled = true; btn.textContent = 'Checking…'; }
+  const recent = new Map(), unreachable = [];
+  const playersNeeded = new Set();
+  pending.forEach(t=>t.picks.forEach(x=>{ if(x.result==null) (x.members || [x.pid]).forEach(id=>playersNeeded.add(id)); }));
+  try{
+    for(const id of playersNeeded){
+      const r = roster.find(x=>x.id===id);
+      if(!r) continue;
+      try{ recent.set(id, await recentFor(r)); }
+      catch(e){ unreachable.push(displayName(r)); if(e.status===429) break; }   // rate limited: stop, try again next round
+    }
+    const settled = [];
+    let gradedLegs = 0, waiting = 0, tooOld = 0;
+    for(const t of pending){
+      const since = ticketPlacedAt(t);
+      const grades = [];
+      t.picks.forEach((x,i)=>{
+        if(x.result!=null) return;
+        const members = (x.members || [x.pid]).map(id=>roster.find(r=>r.id===id));
+        const line = !since || members.some(m=>!m) ? null : gradingLine(members, since, recent);
+        if(line==='too-old'){ tooOld++; return; }
+        const final = line ? line[x.s] : null;
+        if(final===null || final===undefined){ waiting++; return; }
+        grades.push({i, pid:x.pid, s:x.s, line:x.line, dir:x.dir, final: Math.round(final*10)/10, result: legResult(Math.round(final*10)/10, x), matchId: line.matchId});
+      });
+      if(!grades.length) continue;
+      const done = await commitGrade(t.id, grades).catch(()=>null);
+      if(done){ gradedLegs += grades.length; if(done.status!=='pending') settled.push(done); }
+    }
+    autoLastMsg = (gradedLegs ? `Graded ${gradedLegs} pick${gradedLegs>1?'s':''}` + (settled.length ? `, settled ${settled.length} slip${settled.length>1?'s':''}` : '') + '. ' : '')
+      + (waiting ? `${waiting} pick${waiting>1?'s':''} waiting for a game.` : (gradedLegs || tooOld ? '' : 'Nothing new to grade.'))
+      + (tooOld ? ` ${tooOld} pick${tooOld>1?'s are':' is'} older than the last ${AUTO_PAGE} games — grade ${tooOld>1?'them':'it'} by hand below.` : '')
+      + (unreachable.length ? ` Couldn't reach ${unreachable.join(', ')} — will retry.` : '');
+    if(settled.length) toast(settled.map(t=>`${t.who}'s ${t.picks.length}-pick ${t.status}${t.status==='won' ? ' — paid '+t.payout.toFixed(0) : ''}`).join(' · '));
+    else if(manual) toast(autoLastMsg);
+  } finally {
+    autoBusy = false; autoLastRun = Date.now();
+    if(btn){ btn.disabled = false; btn.textContent = 'Check now'; }
+    renderAutoStatus();
+  }
+}
+function renderAutoStatus(){
+  const el = $('autoStatus'); if(!el) return;
+  if(!autoLastRun){ el.textContent = ''; return; }
+  const mins = Math.round((Date.now()-autoLastRun)/60000);
+  el.textContent = 'Last checked ' + (mins<1 ? 'just now' : mins+' min ago') + (autoLastMsg ? ' · '+autoLastMsg : '');
+}
+// check soon after the board loads, then every few minutes while someone is looking at it
+function startAutoGrade(){
+  setTimeout(()=>autoGrade(false), 4000);
+  setInterval(()=>{ if(document.visibilityState==='visible') autoGrade(false); renderAutoStatus(); }, AUTO_EVERY_MS);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && Date.now()-autoLastRun > AUTO_EVERY_MS/2) autoGrade(false); });
+}
+
 function gradeAll(){
   document.querySelectorAll('#settleList input[data-combo]').forEach(inp=>{
     if(inp.value!=='' && !isNaN(Number(inp.value))) actuals[inp.dataset.combo]=Number(inp.value);
@@ -1446,7 +1594,7 @@ function renderRosterTab(){
     : '<div class="empty">No players saved yet.</div>';
 }
 
-function renderAll(){ renderRoster(); renderStats(); renderSlip(); renderTickets(); renderSettle(); renderRosterTab(); renderLeaderboard(); }
+function renderAll(){ renderRoster(); renderStats(); renderSlip(); renderTickets(); renderSettle(); renderAutoStatus(); renderRosterTab(); renderLeaderboard(); }
 function showLanding(notFound){
   document.body.classList.add('no-group');
   document.body.classList.remove('booting');
@@ -1496,6 +1644,7 @@ else metaRef.once('value').then(snap=>{
   document.body.classList.remove('no-group', 'booting');
   metaRef.on('value', s=>{ groupName = (s.val()||{}).name || 'Unnamed group'; $('groupName').textContent = groupName; document.title = groupName+' · PropHouse'; rememberGroup(GROUP_ID, groupName); });
   loadSetup();
+  startAutoGrade();
 }).catch(e=>{ showLanding(true); toast("Couldn't open that group — "+e.message); });
 </script>
 </body>
