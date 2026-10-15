@@ -36,6 +36,15 @@
                 ".validate": "$who.length <= 120 && newData.hasChildren(['name', 'picks', 'updatedAt']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 40 && newData.child('updatedAt').val() === now && newData.child('picks').hasChildren(['qf', 'sf', 'champ', 'score'])"
               }
             },
+            "playins": {
+              ".write": "root.child('groups').child($gid).child('meta').exists()",
+              "$who": {
+                ".validate": "$who.length <= 120",
+                "$mid": {
+                  ".validate": "$mid.matches(/^[0-9]+$/) && $mid.length <= 24 && newData.hasChildren(['name', 'team', 'updatedAt']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 40 && newData.child('team').isString() && newData.child('team').val().length <= 24 && newData.child('updatedAt').val() === now && (!newData.child('score').exists() || (newData.child('score').isString() && newData.child('score').val().matches(/^(3-[0-2])?$/)))"
+                }
+              }
+            },
             "$other": { ".validate": false }
           }
         },

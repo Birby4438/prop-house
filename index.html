@@ -139,6 +139,12 @@
   .w-detail{padding:8px 4px 4px 50px;font-size:12.5px;color:var(--dim);line-height:1.7}
   .w-detail .ok{color:var(--more)} .w-detail .no{color:var(--less)} .w-detail .tb{color:var(--faint)}
 
+  .pi-list{display:grid;gap:10px}
+  @media (min-width:720px){ .pi-list{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  .pi-scores{display:flex;align-items:center;gap:6px;padding:4px 4px 2px}
+  .pi-sc{border:1px solid var(--edge);background:var(--bg);color:var(--dim);border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer}
+  .pi-sc.on{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+
   /* board mode toggle */
   .board-mode{display:inline-flex;background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:3px;gap:2px;margin-bottom:14px}
   .board-mode button{background:none;border:0;color:var(--dim);font-size:13px;font-weight:600;padding:6px 16px;border-radius:8px;cursor:pointer;transition:color .15s,background .15s}
@@ -1707,6 +1713,8 @@ async function fetchWorlds(){
   const stages = (((st.standings||[])[0])||{}).stages || [];
   const ko = stages.find(x=>/knockout/i.test(x.name||''));
   const raw = ko ? (ko.sections||[]).flatMap(sec=>sec.matches||[]) : [];
+  const pi = stages.find(x=>/play.?in/i.test(x.name||''));
+  const piRaw = pi ? (pi.sections||[]).flatMap(sec=>sec.matches||[]) : [];
   const times = {}, swiss = {done:0, total:0};
   let token = '';
   for(let page=0; page<6; page++){   // schedule pages: knockout start times (locking) + Swiss progress (pre-draw screen)
@@ -1716,7 +1724,7 @@ async function fetchWorlds(){
       if(e.match && e.match.id) times[e.match.id] = at;
       if(/swiss/i.test(e.blockName||'') && at>=t.s && at<=t.e){ swiss.total++; if(e.state==='completed') swiss.done++; }
     });
-    if(raw.length && raw.every(m=>times[m.id])) break;
+    if(raw.length && [...raw, ...piRaw].every(m=>times[m.id])) break;
     token = sc.pages && sc.pages.newer;
     if(!token) break;
   }
@@ -1726,7 +1734,13 @@ async function fetchWorlds(){
     teams: (m.teams||[]).map(x=>isTbdTeam(x) ? null : {id:x.id, code:x.code, name:x.name, image:httpsImg(x.image), outcome:(x.result||{}).outcome||null, wins:(x.result||{}).gameWins}),
   }));
   const qfs = matches.filter(m=>m.round==='qf');
+  const team = x => isTbdTeam(x) ? null : {id:x.id, code:x.code, name:x.name, image:httpsImg(x.image), outcome:(x.result||{}).outcome||null, wins:(x.result||{}).gameWins};
+  // Play-Ins: a small double-elimination bracket whose later matchups depend on earlier results, so it's
+  // picked series by series — each opens once its teams are known and locks when it starts
+  const playins = piRaw.map(m=>({id:m.id, state:m.state||'unstarted', at:times[m.id]||null, teams:(m.teams||[]).map(team)}))
+    .sort((a,b)=>(a.at||Infinity)-(b.at||Infinity));
   return {
+    playins,
     tid: t.id, name: String(t.slug||'worlds').replace(/^worlds_?/i, 'Worlds ').trim(), start: t.s, end: t.e, matches, swiss,
     lockAt: qfs.map(m=>m.at).filter(Boolean).sort((a,b)=>a-b)[0] || null,
     drawn: matches.length===7 && qfs.every(m=>m.teams.length===2 && m.teams.every(Boolean)),
@@ -1852,6 +1866,70 @@ function renderBracketResults(){
     <div class="round sf"><h4>Semifinals</h4><div class="slots">${ms.slice(4,6).map(card).join('')}</div></div>
     <div class="round fin"><h4>Final${res.champ ? ' · champion' : ''}</h4><div class="slots">${card(ms[6])}</div></div></div>`;
 }
+/* ---- Play-Ins: series-by-series picks ---- */
+const PI_PTS = {win:10, exact:5};
+let worldsStage = null;   // 'playins' | 'knockouts' — defaults to whichever is happening
+const piLocked = m => m.state!=='unstarted' || (!!m.at && Date.now() >= m.at - 30e3);   // 30s grace so a pick can't land just after the start
+const seriesScore = m => { const w = m.teams.find(t=>t && t.outcome==='win'), l = m.teams.find(t=>t && t.outcome==='loss'); return w && l ? w.wins+'-'+l.wins : null; };
+const piAll = () => (worlds && (worldsAll[worlds.tid]||{}).playins) || {};
+const piMine = () => { const n = (worldsDraft.name||'').trim(); return n ? (piAll()[entryKey(n)] || {}) : {}; };
+// a pick counts only if the server stamped it before its series started
+const piOnTime = (p, m) => !!p && typeof p.updatedAt==='number' && !!m.at && p.updatedAt < m.at;
+function piStandings(){
+  return Object.entries(piAll()).map(([k, picks])=>{
+    let pts = 0, correct = 0, exact = 0, made = 0, name = '';
+    worlds.playins.forEach(m=>{
+      const p = picks && picks[m.id]; if(!p) return;
+      name = p.name || name;
+      if(!piOnTime(p, m)) return;
+      made++;
+      const w = winnerOf(m); if(!w) return;
+      if(p.team===w){ pts += PI_PTS.win; correct++; if(p.score && p.score===seriesScore(m)){ pts += PI_PTS.exact; exact++; } }
+    });
+    return {k, name: name || k, pts, correct, exact, made};
+  }).filter(r=>r.made).sort((a,b)=>(b.pts-a.pts) || (b.exact-a.exact) || a.name.localeCompare(b.name));
+}
+function piSave(mid, team, score){
+  const m = worlds && worlds.playins.find(x=>x.id===mid); if(!m) return;
+  if(piLocked(m)) return toast('That series has started — picks are locked');
+  const name = String(worldsDraft.name||'').trim().slice(0,40);
+  if(!name){ toast('Add your name first'); const el = $('piName'); if(el) el.focus(); return; }
+  try{ localStorage.setItem('prophouse.name', name); }catch(e){}
+  groupRef.child('worlds/'+worlds.tid+'/playins/'+entryKey(name)+'/'+mid)
+    .set({name, team, score: score||'', updatedAt: firebase.database.ServerValue.TIMESTAMP})
+    .catch(e=>toast('Couldn\'t save — '+e.message));
+}
+function piPick(mid, team){ const cur = piMine()[mid]; piSave(mid, team, cur && cur.team===team ? cur.score : ''); }
+function piScore(mid, score){ const cur = piMine()[mid]; if(!cur || !cur.team) return toast('Pick a winner first'); piSave(mid, cur.team, cur.score===score ? '' : score); }
+function setWorldsStage(st){ worldsStage = st; renderWorlds(); }
+function renderPlayins(){
+  const mine = piMine(), all = piAll(), rows = piStandings();
+  const total = worlds.playins.length, done = worlds.playins.filter(m=>m.state==='completed').length;
+  const name = esc(worldsDraft.name||'');
+  const cards = worlds.playins.map((m,i)=>{
+    const locked = piLocked(m), mp = mine[m.id], w = winnerOf(m), sc = seriesScore(m), last = i===total-1;
+    const ready = m.teams.length===2 && m.teams.every(Boolean);
+    const status = m.state==='completed' ? `Final · ${sc||''}` : m.state==='inProgress' ? '<b style="color:var(--less)">LIVE</b>' : locked ? 'Locked' : ready ? 'Open · locks at start' : 'Teams set by earlier results';
+    const btns = ready ? m.teams.map(t=>{
+      const picked = mp && mp.team===t.id && piOnTime(mp, m) || (mp && mp.team===t.id && !locked);
+      const cls = m.state==='completed' ? (t.id===w ? 'won' : 'lost') : '';
+      const mark = picked && w ? (t.id===w ? 'right' : 'wrong') : '';
+      return teamBtn(t, {cls: cls+' '+mark, picked: picked && !mark, score: m.state!=='unstarted' ? t.wins : null, onclick: `piPick('${m.id}','${t.id}')`, disabled: locked});
+    }).join('') : [0,1].map(()=>teamBtn(null, {label:'TBD'})).join('');
+    const scoreRow = ready && !locked && mp && mp.team ? `<div class="pi-scores">${['3-0','3-1','3-2'].map(x=>`<button class="pi-sc ${mp.score===x?'on':''}" onclick="piScore('${m.id}','${x}')">${x}</button>`).join('')}<span class="w-note" style="margin:0 0 0 4px">exact score +${PI_PTS.exact}</span></div>` : '';
+    const others = Object.values(all).map(p=>p && p[m.id]).filter(p=>p && piOnTime(p, m));
+    const reveal = locked && others.length ? `<div class="w-note">${others.map(p=>{ const t = m.teams.find(x=>x && x.id===p.team); return esc(p.name)+' → '+esc(t ? t.code : '?')+(p.score?' '+esc(p.score):''); }).join(' · ')}</div>`
+      : !locked && others.length ? `<div class="w-note">${others.length} pick${others.length>1?'s':''} in — revealed when it starts</div>` : '';
+    const late = mp && locked && !piOnTime(mp, m) ? '<div class="w-note" style="color:var(--less)">Your pick was saved after this series started — it doesn\'t count.</div>' : '';
+    return `<div class="bm"><div class="when">${fmtWhen(m.at)} · Bo5 · ${status}${last ? ' · <b>winner goes to Swiss</b>' : ''}</div>${btns}${scoreRow}${reveal}${late}</div>`;
+  }).join('');
+  const board = rows.length ? rows.map((r,i)=>`<div class="w-row" style="cursor:default"><span class="rk">${i+1}</span><span class="nm">${esc(r.name)}</span><span class="mx">${r.correct}/${r.made} right${r.exact ? ' · '+r.exact+' exact' : ''}</span><span class="pts">${r.pts}</span></div>`).join('')
+    : '<div class="w-muted">No picks have locked in yet.</div>';
+  return `<div class="w-hero"><div><h2>${esc(worlds.name)} Play-Ins</h2><p>Pick each series before it starts — ${PI_PTS.win} pts for the winner, +${PI_PTS.exact} for the exact score. Picks lock at the start of each series; everyone's picks show once it starts.</p></div>${done===total && total ? '<span class="w-pill done">Final</span>' : '<span class="w-pill live">'+done+'/'+total+' played</span>'}</div>
+    <div class="w-card"><div class="w-save" style="margin-top:0"><input id="piName" placeholder="Your name — picks save as you tap" maxlength="40" value="${name}" oninput="worldsDraft.name=this.value" onchange="worldsDraft.name=this.value.trim(); try{localStorage.setItem('prophouse.name', worldsDraft.name)}catch(e){}; renderWorlds()"></div></div>
+    <div class="pi-list">${cards}</div>
+    <div class="w-card" style="margin-top:14px"><h3>Play-In standings</h3>${board}</div>`;
+}
 function toggleWorldsRow(i){ const r = worldsStandings()[i]; if(!r) return; worldsOpenRow = worldsOpenRow===r.k ? null : r.k; renderWorlds(); }
 function renderWorlds(){
   const el = $('worldsBody'); if(!el) return;
@@ -1861,6 +1939,17 @@ function renderWorlds(){
       : '<div class="empty">Loading Worlds…</div>';
     return;
   }
+  const ae = document.activeElement;
+  if(ae && (ae.id==='wName' || ae.id==='piName')){ ae.onblur = ()=>{ ae.onblur = null; renderWorlds(); }; return; }   // don't redraw under someone typing their name
+  const hasPI = worlds.playins && worlds.playins.length;
+  if(!worldsStage) worldsStage = hasPI && worlds.playins.some(m=>m.state!=='completed') ? 'playins' : 'knockouts';
+  const tabs = hasPI ? `<div class="board-mode"><button class="${worldsStage==='playins'?'on':''}" onclick="setWorldsStage('playins')">Play-Ins</button><button class="${worldsStage==='knockouts'?'on':''}" onclick="setWorldsStage('knockouts')">Knockouts</button></div>` : '';
+  if(hasPI && worldsStage==='playins'){ el.innerHTML = tabs + renderPlayins(); return; }
+  const ko = {innerHTML:''};   // the knockout view renders into this, then sits under the stage tabs
+  renderKnockouts(ko);
+  el.innerHTML = tabs + ko.innerHTML;
+}
+function renderKnockouts(el){
   const locked = worldsLocked(), res = bracketResults(worlds), entries = worldsEntries(), n = Object.keys(entries).length;
   const pill = res.champ ? '<span class="w-pill done">Final</span>' : locked ? '<span class="w-pill live">Locked · live</span>' : worlds.drawn ? '<span class="w-pill">Open</span>' : '<span class="w-pill">Opens after Swiss</span>';
   const hero = `<div class="w-hero"><div><h2>${esc(worlds.name)} Bracket</h2><p>Pick the knockout stage. ${BRACKET_PTS.qf} pts per quarterfinal winner, ${BRACKET_PTS.sf} per finalist, ${BRACKET_PTS.champ} for the champion — the final's exact score breaks ties.</p></div>${pill}</div>`;
