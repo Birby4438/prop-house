@@ -335,7 +335,7 @@
     </div>
     <div id="rosterList"></div>
     <div class="hint">
-      Sync pulls a player's last 5 competitive matches and sets every line at their average, rounded to the nearest .5 — so each pick is roughly a coin flip and the multipliers stay fair. If someone plays on more than one account, link the alt under their name — sync pools everyone's most recent games together and uses the 5 most recent overall.<br><br>
+      Sync pulls a player's last 10 competitive matches. Every line is set at their average over the 5 most recent, rounded to the nearest .5, and each leg's multiplier is the fair price for how often they'd beat that line, judged against all 10 games — how much the stat swings, and where they usually sit — so dragging a line further out climbs the payout to match. If someone plays on more than one account, link the alt under their name — sync pools everyone's games together and uses the most recent overall.<br><br>
       Roster, lines, tickets, and standings are synced live across everyone on this site — whatever anyone changes, everyone sees.
     </div>
   </section>
@@ -391,7 +391,7 @@ const STATS = [
   {key:'ka',     label:'Kills + Assists',   def:20.5, max:60},
   {key:'fhk',    label:'First Half Kills',  def:9.5,  max:22},
   {key:'fb',     label:'First Bloods',      def:1.5,  max:10},
-  {key:'perf',   label:'Performance Score', def:250.5,max:500},
+  {key:'perf',   label:'Performance Score', def:250.5,max:500, continuous:true},
 ];
 // derives status/payout from each pick's current result — shared by grading and by manual result corrections
 function regradeTicket(t){
@@ -446,32 +446,69 @@ function balanceFor(name){
    no data to price a leg off of, it defaults to fair 2.0 odds (a coin
    flip), matching how lines are set in the first place. */
 const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
-function probOver(samples, line, dir, def){
-  // a continuous curve fit to the sample's mean/spread, not a raw count of samples above the
-  // line — counting only gives as many distinct values as there are samples (5), so the odds
-  // would visibly jump between a handful of levels instead of scaling smoothly while dragging.
-  // The spread is floored against the STAT's own fixed scale (def), not just the 5-game sample's
-  // own variance — with only 5 games, a lucky/unlucky tight streak can make the raw sample
-  // variance tiny, which makes the curve extremely steep and still "jumps" a full step at a time.
-  const mean = samples.reduce((a,b)=>a+b,0)/samples.length;
-  const variance = samples.reduce((a,b)=>a+(b-mean)*(b-mean),0)/samples.length;
-  const sd = Math.max(Math.sqrt(variance), def*0.5);
-  const z = (mean-line)/sd;
-  const pOver = 1/(1+Math.exp(-z));   // logistic curve — gentle slope, no near-vertical jumps
-  return dir==='more' ? pOver : 1-pOver;
+/* ---- leg odds ----
+   The line sits at the player's last-5 average; the odds ask how likely they are to beat it,
+   using how much that stat actually swings across their whole recent history (last 10 games).
+   Counting stats (kills, deaths, first bloods...) are whole numbers, so they're modeled as
+   counts — a negative binomial, which is a Poisson that allows streakier-than-average players —
+   and a line of 17.5 is exactly P(kills >= 18). Performance Score is continuous, so it's a
+   bell curve. Payout is the fair price, 1 / chance, so there's no flat cap at either end.
+   Tuned on a walk-forward backtest of the group's real games (~8k legs): players drift back toward
+   their longer-run level after a hot/cold 5, and 5 games pin the true average down only loosely,
+   so the expected value is blended with the full history and the spread is widened to match. */
+const P_FLOOR = 0.02;
+const RECENT_WEIGHT = 0.5;   // expected value = this much last-5 average + the rest full-history average
+const SPREAD_INFLATE = 1.35; // variance multiplier for how loosely ~5-10 games pin a player down   // never price a leg rarer than 2% (50x) or surer than 98% (1.02x) — keeps tiny samples from producing silly numbers
+const mean = a => a.reduce((x,y)=>x+y,0)/a.length;
+function sampleVar(a){ if(a.length<2) return 0; const m=mean(a); return a.reduce((x,v)=>x+(v-m)*(v-m),0)/(a.length-1); }
+function countCdf(k, mu, v){
+  // P(X <= k) for a count with mean mu and variance v (Poisson when v <= mu, else negative binomial)
+  if(k<0) return 0;
+  let pk, step;
+  if(v<=mu*1.0001){ pk=Math.exp(-mu); step=j=>mu/j; }
+  else { const size=mu*mu/(v-mu), q=size/(size+mu); pk=Math.pow(q,size); step=j=>(j-1+size)/j*(1-q); }
+  let cdf=pk;
+  for(let j=1;j<=k;j++){ pk*=step(j); cdf+=pk; }
+  return Math.min(1,cdf);
+}
+function normCdf(z){   // Abramowitz-Stegun 7.1.26, |error| < 1.5e-7
+  const t=1/(1+0.3275911*Math.abs(z)/Math.SQRT2);
+  const e=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-z*z/2);
+  return z>=0 ? (1+e)/2 : (1-e)/2;
+}
+function hitChance(r, statKey, line, dir){
+  // chance this leg wins, given it doesn't push (a push just drops the leg), or null with too little data
+  const hist = r && r.samples && r.samples[statKey];
+  if(!hist || hist.length<3) return null;
+  const st = STATS.find(s=>s.key===statKey) || {};
+  const recent = (r.avg && r.avg[statKey]!=null) ? r.avg[statKey] : mean(hist);
+  const mu = RECENT_WEIGHT*recent + (1-RECENT_WEIGHT)*mean(hist);
+  const spread = SPREAD_INFLATE*sampleVar(hist);
+  let pOver, pUnder;
+  if(st.continuous){
+    const sd = Math.max(Math.sqrt(spread), 0.08*Math.max(mu,1));   // small floor so a freakishly steady stretch can't make the curve a cliff
+    pOver = 1-normCdf((line-mu)/sd); pUnder = 1-pOver;
+  } else {
+    const m = Math.max(mu, 0.15);                // a 0.0 average still leaves some chance of a first blood
+    const v = Math.max(spread, m);               // at least Poisson spread
+    const k = Math.floor(line);
+    pUnder = countCdf(Number.isInteger(line) ? line-1 : k, m, v);
+    pOver = 1-countCdf(k, m, v);                 // whole-number line: the exact value pushes, so it's in neither side
+  }
+  const p = (dir==='more' ? pOver : pUnder) / Math.max(1e-9, pOver+pUnder);
+  return clamp(p, P_FLOOR, 1-P_FLOOR);
 }
 function legOdds(r, statKey, line, dir){
-  const samples = r && r.samples && r.samples[statKey];
-  if(!samples || samples.length<3) return 2;   // no data — price it as a fair coin flip
-  const def = (STATS.find(s=>s.key===statKey) || {}).def || 10;
-  const pHit = probOver(samples, line, dir, def);
-  return clamp(1/pHit, 1.2, 6);
+  const p = hitChance(r, statKey, line, dir);
+  if(p===null) return 2;   // not enough games yet — price it as a coin flip
+  return Math.round(100/p)/100;
 }
 function slipMultiplier(pickList){
   const total = pickList.reduce((prod,x)=>prod*(x.odds||2), 1);
   return Math.round(total * 10)/10;
 }
-const SYNC_MATCHES = 5;
+const LINE_MATCHES = 5;      // lines are set at the average of this many most recent games
+const HISTORY_MATCHES = 10;  // ...and odds use this many to judge how much each stat swings (10 is the API's per-request max)
 const API = 'https://prop-house-proxy.prophouse-birby.workers.dev';
 
 /* ================= shared realtime state (Firebase) ================= */
@@ -654,32 +691,35 @@ async function syncPlayer(i){
   const btn = $('sync-'+i); if(btn){ btn.disabled=true; btn.textContent='…'; }
   try{
     // pull each linked account's own most recent games, then pool everyone's rows and
-    // keep only the SYNC_MATCHES most recent overall — this is always correct because a
+    // keep only the HISTORY_MATCHES most recent overall — this is always correct because a
     // game can only land in the global top-N if it's also within that account's own top-N.
     // Each account is fetched independently so one bad/mistyped alt can't break the others.
     const pool = [];
     const failures = [];
     for(const acct of accounts){
       try{
-        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?mode=competitive&size='+SYNC_MATCHES);
+        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?mode=competitive&size='+HISTORY_MATCHES);
         (json.data||[]).forEach(m=>{ const row = matchRowFor(m, acct); if(row) pool.push(row); });
       }catch(e){ failures.push(acct.riot); }
     }
     if(!pool.length) throw new Error('No recent competitive matches found for '+label);
     pool.sort((a,b)=>b.gameStart-a.gameStart);
-    const rows = pool.slice(0, SYNC_MATCHES);
+    const history = pool.slice(0, HISTORY_MATCHES);
+    const rows = history.slice(0, LINE_MATCHES);
     // roster may have been reassigned wholesale by a Firebase snapshot while we awaited — re-find by identity, not by stale reference/index
     const idx = roster.findIndex(x=>x.id===pid);
     if(idx<0) return;   // player was removed while syncing
     const r = roster[idx];
     r.samples = r.samples || {};
     STATS.forEach(s=>{
-      const vals = rows.map(x=>x[s.key]).filter(v=>v!==null && !isNaN(v));
+      const ok = v => v!==null && v!==undefined && !isNaN(v);
+      const vals = rows.map(x=>x[s.key]).filter(ok);
+      const hist = history.map(x=>x[s.key]).filter(ok);
       if(!vals.length) return;
       const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
       r.avg[s.key] = avg;
       r.lines[s.key] = toHalf(avg);
-      r.samples[s.key] = vals;   // real recent game values — prices this stat's leg odds
+      r.samples[s.key] = hist;   // real game values from the whole recent history — prices this stat's leg odds
     });
     r.matches = rows.length;
     const suffix = accounts.length>1 ? ' across '+(accounts.length-failures.length)+'/'+accounts.length+' accounts' : '';
@@ -743,7 +783,8 @@ function inferredDir(r, sk, line){
 }
 const oddsHintText = (pk, r, sk, line) => {
   const dir = pk ? pk.dir : inferredDir(r, sk, line);
-  return (dir==='more'?'More':'Less')+' '+legOdds(r,sk,line,dir).toFixed(2)+'x';
+  const p = hitChance(r, sk, line, dir);
+  return (dir==='more'?'More':'Less')+' '+legOdds(r,sk,line,dir).toFixed(2)+'x'+(p===null ? '' : ' · '+Math.round(p*100)+'%');
 };
 
 function renderStats(){
