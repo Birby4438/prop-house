@@ -1,0 +1,35 @@
+{
+  "rules": {
+    "groups": {
+      "$gid": {
+        ".read": "$gid.matches(/^[A-Za-z0-9_-]+$/) && $gid.length >= 16 && $gid.length <= 40",
+
+        "meta": {
+          ".write": "$gid.matches(/^[A-Za-z0-9_-]+$/) && $gid.length >= 16 && $gid.length <= 40 && newData.exists()",
+          ".validate": "newData.hasChildren(['name', 'createdAt'])",
+          "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40" },
+          "createdAt": { ".validate": "newData.isNumber() && (!data.exists() || data.val() === newData.val())" },
+          "$other": { ".validate": false }
+        },
+
+        "roster": {
+          ".write": "root.child('groups').child($gid).child('meta').exists()"
+        },
+        "tickets": {
+          ".write": "root.child('groups').child($gid).child('meta').exists()",
+          "$tid": {
+            ".validate": "newData.hasChildren(['who', 'stake', 'picks', 'status']) && newData.child('stake').isNumber() && newData.child('who').isString() && newData.child('who').val().length <= 60"
+          }
+        },
+        "actualsList": {
+          ".write": "root.child('groups').child($gid).child('meta').exists()"
+        },
+        "startingBalances": {
+          ".write": "root.child('groups').child($gid).child('meta').exists()"
+        },
+
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

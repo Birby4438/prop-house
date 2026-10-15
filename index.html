@@ -48,6 +48,38 @@
     nav a{flex:1;text-align:center;padding:7px 4px}
   }
 
+  /* group: header button + menu, start screen */
+  .brand{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+  .group-wrap{position:relative;min-width:0}
+  .group-btn{display:flex;align-items:center;gap:7px;max-width:200px;background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+    border-radius:999px;padding:6px 12px 6px 10px;font-size:13px;font-weight:600;cursor:pointer;transition:border-color .15s}
+  .group-btn:hover{border-color:var(--edge-2)}
+  .group-btn #groupName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .group-btn .dot{width:7px;height:7px;border-radius:50%;background:var(--more);box-shadow:0 0 0 3px var(--more-soft);flex:none}
+  .group-btn .chev{color:var(--faint);font-size:10px}
+  .group-menu{position:absolute;top:calc(100% + 8px);left:0;z-index:70;width:300px;max-width:calc(100vw - 32px);background:var(--panel-2);
+    border:1px solid var(--edge-2);border-radius:14px;padding:12px;box-shadow:0 20px 40px -12px rgba(0,0,0,.8)}
+  .gm-label{font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px}
+  .gm-row{display:flex;gap:6px}
+  .gm-row input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--edge);color:var(--ink);border-radius:var(--r-sm);padding:8px 10px;font-size:12px;outline:none}
+  .gm-row .btn{padding:8px 14px;font-size:13px}
+  .gm-note{font-size:11.5px;color:var(--faint);line-height:1.45;margin:8px 0 6px}
+  .gm-item{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--edge);color:var(--ink);font-size:13px;font-weight:500;padding:10px 2px;cursor:pointer}
+  .gm-item:hover{color:var(--acc)}
+  body.no-group nav, body.no-group .group-wrap, body.no-group .wrap>section:not(#landing){display:none!important}
+  body:not(.no-group) #landing, body.booting #landing{display:none}   /* booting: a link's group is still loading — don't flash the start screen */
+  .land{max-width:480px;margin:28px auto 0}
+  .land h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.035em;margin-bottom:10px}
+  .land>p{color:var(--dim);font-size:14.5px;line-height:1.55;margin-bottom:22px}
+  .land-card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-lg);padding:14px;margin-bottom:12px}
+  .land-card>label{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:8px}
+  .land-warn{border-color:rgba(251,113,133,.4);background:var(--less-soft);color:var(--less);font-size:13px}
+  .recent{display:flex;align-items:center;gap:10px;padding:9px 4px;border-top:1px solid var(--edge);color:var(--ink);text-decoration:none;font-weight:600;font-size:14px}
+  .recent:first-child{border-top:0}
+  .recent .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--acc-soft);color:var(--acc);font-size:12px;font-weight:700;text-transform:uppercase;flex:none}
+  .recent .go{margin-left:auto;color:var(--acc);font-size:12.5px;font-weight:600}
+  @media (max-width:480px){ .land h1{font-size:25px} .land{margin-top:16px} .group-menu{left:auto;right:0} }
+
   /* board mode toggle */
   .board-mode{display:inline-flex;background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:3px;gap:2px;margin-bottom:14px}
   .board-mode button{background:none;border:0;color:var(--dim);font-size:13px;font-weight:600;padding:6px 16px;border-radius:8px;cursor:pointer;transition:color .15s,background .15s}
@@ -297,16 +329,49 @@
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
-<body>
+<body class="no-group booting">
 <header>
   <div class="header-in">
-    <div class="logo"><span class="logo-mark">P</span><span class="logo-txt">Prop<span>House</span></span></div>
+    <div class="brand">
+      <div class="logo"><span class="logo-mark">P</span><span class="logo-txt">Prop<span>House</span></span></div>
+      <div class="group-wrap">
+        <button class="group-btn" id="groupBtn" onclick="toggleGroupMenu()" title="Group & invite link"><span class="dot"></span><span id="groupName">Group</span><span class="chev">▾</span></button>
+        <div class="group-menu hide" id="groupMenu">
+          <div class="gm-label">Invite link</div>
+          <div class="gm-row"><input id="inviteLink" readonly onclick="this.select()"><button class="btn" onclick="copyInvite()">Copy</button></div>
+          <div class="gm-note">Anyone with this link can see this group's roster and place bets. Only share it with your group.</div>
+          <button class="gm-item" onclick="renameGroup()">Rename group</button>
+          <button class="gm-item" onclick="leaveGroup()">Switch or create a group</button>
+        </div>
+      </div>
+    </div>
     <nav>
       <a id="nav-board" class="on" onclick="setTab('board')">Board</a><a id="nav-tickets" onclick="setTab('tickets')">Tickets</a><a id="nav-settle" onclick="setTab('settle')">Settle</a><a id="nav-roster" onclick="setTab('roster')">Roster</a>
     </nav>
   </div>
 </header>
 <div class="wrap">
+  <!-- START (no group in the link) -->
+  <section id="landing">
+    <div class="land">
+      <h1>Prop bets on your squad's real stats.</h1>
+      <p>Pick More or Less on your friends' Valorant kills, deaths and more — lines and odds come from their actual recent games. Every group gets its own private board that only people with the link can open.</p>
+      <div class="land-card land-warn hide" id="landNotFound">That group link doesn't work — make sure the whole link was copied, or ask for a fresh one.</div>
+      <div class="land-card">
+        <label for="newGroupName">Start a new group</label>
+        <div class="add-row"><input id="newGroupName" placeholder="Group name, e.g. Friday stack" maxlength="40" onkeydown="if(event.key==='Enter')createGroup()"><button class="btn" id="createGroupBtn" onclick="createGroup()">Create</button></div>
+      </div>
+      <div class="land-card">
+        <label for="joinLink">Got an invite?</label>
+        <div class="add-row"><input id="joinLink" placeholder="Paste the invite link" onkeydown="if(event.key==='Enter')joinGroup()"><button class="btn btn-ghost" onclick="joinGroup()">Join</button></div>
+      </div>
+      <div class="land-card hide" id="recentGroups">
+        <label>Your groups on this device</label>
+        <div id="recentList"></div>
+      </div>
+    </div>
+  </section>
+
 
   <!-- BOARD -->
   <section id="tab-board">
@@ -315,7 +380,7 @@
     <div class="phead"><h2 id="pname" onclick="editPname()" title="Click to rename"></h2><span class="src" id="psrc"></span><button class="p-remove hide" id="pRemove" onclick="removeSelectedPlayer()" title="Remove player">✕</button></div>
     <div class="board-note" id="boardNote">Lines are set from each player's recent averages once synced — tap a number to override.</div>
     <div id="statList"></div>
-    <div class="empty hide" id="boardEmpty">No players yet — add Riot IDs in the Roster tab.</div>
+    <div class="empty hide" id="boardEmpty">No players yet — add Riot IDs in the Roster tab, then share the invite link from the group menu up top.</div>
     <div class="empty hide" id="comboEmpty">Tap two or more players who are queuing together — every line becomes their combined total for that game.</div>
   </section>
 
@@ -553,11 +618,40 @@ const firebaseConfig = {
   appId: "1:598485972069:web:a782f65785542e7f4bc28c"
 };
 firebase.initializeApp(firebaseConfig);
-const stateRef = firebase.database().ref('prophouse');
-const rosterRef = stateRef.child('roster');
-const ticketsRef = stateRef.child('tickets');
-const actualsRef = stateRef.child('actualsList');
-const balancesRef = stateRef.child('startingBalances');
+
+/* ---- groups ----
+   Every friend group gets its own private space at groups/<id>. The id is a long random code that
+   only ever travels in the link's #fragment (browsers never send that part to any server), and the
+   database rules refuse to list groups — so a group can only be opened by someone given its link. */
+const GROUP_ID_RE = /^[A-Za-z0-9_-]{16,40}$/;
+function groupIdFrom(text){
+  const s = String(text||'').trim();
+  const m = s.match(/[#&?]g=([A-Za-z0-9_-]{16,40})(?![A-Za-z0-9_-])/);
+  if(m) return m[1];
+  return GROUP_ID_RE.test(s) ? s : null;
+}
+function newGroupId(){
+  const abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', out = [];
+  while(out.length<20){   // 20 base-62 chars ≈ 119 random bits; reject bytes >= 248 so every char is equally likely
+    for(const b of crypto.getRandomValues(new Uint8Array(32))) if(b<248 && out.length<20) out.push(abc[b%62]);
+  }
+  return out.join('');
+}
+const inviteLink = id => location.origin + location.pathname + '#g=' + id;
+const GROUP_ID = groupIdFrom(location.hash);
+const groupRef = GROUP_ID ? firebase.database().ref('groups/'+GROUP_ID) : null;
+const metaRef = groupRef && groupRef.child('meta');
+const rosterRef = groupRef && groupRef.child('roster');
+const ticketsRef = groupRef && groupRef.child('tickets');
+const actualsRef = groupRef && groupRef.child('actualsList');
+const balancesRef = groupRef && groupRef.child('startingBalances');
+let groupName = '';
+// groups this device has opened, for one-tap rejoin from the start screen (a convenience only — the link is the real key)
+function recentGroups(){ try{ return JSON.parse(localStorage.getItem('prophouse.groups')||'[]').filter(g=>g && GROUP_ID_RE.test(g.id)); }catch(e){ return []; } }
+function rememberGroup(id, name){
+  try{ localStorage.setItem('prophouse.groups', JSON.stringify([{id, name, at:Date.now()}, ...recentGroups().filter(g=>g.id!==id)].slice(0,8))); }catch(e){}
+}
+function forgetGroup(id){ try{ localStorage.setItem('prophouse.groups', JSON.stringify(recentGroups().filter(g=>g.id!==id))); }catch(e){} }
 let rosterLoaded = false;
 
 /* ================= state ================= */
@@ -1287,8 +1381,56 @@ function renderRosterTab(){
 }
 
 function renderAll(){ renderRoster(); renderStats(); renderSlip(); renderTickets(); renderSettle(); renderRosterTab(); renderLeaderboard(); }
+function showLanding(notFound){
+  document.body.classList.add('no-group');
+  document.body.classList.remove('booting');
+  $('landNotFound').classList.toggle('hide', !notFound);
+  const rec = recentGroups().filter(g=>g.id!==GROUP_ID);
+  $('recentGroups').classList.toggle('hide', !rec.length);
+  $('recentList').innerHTML = rec.map(g=>`<a class="recent" href="#g=${g.id}"><span class="av">${esc((g.name||'?').trim().charAt(0)||'?')}</span><span>${esc(g.name||'Unnamed group')}</span><span class="go">Open →</span></a>`).join('');
+}
+function createGroup(){
+  const name = ($('newGroupName').value.trim() || 'My group').slice(0,40);
+  const id = newGroupId();
+  const btn = $('createGroupBtn'); btn.disabled = true;
+  firebase.database().ref('groups/'+id+'/meta').set({name, createdAt: firebase.database.ServerValue.TIMESTAMP})
+    .then(()=>{ rememberGroup(id, name); location.hash = 'g='+id; })
+    .catch(e=>{ btn.disabled = false; toast("Couldn't create the group — "+e.message); });
+}
+function joinGroup(){
+  const id = groupIdFrom($('joinLink').value);
+  if(!id) return toast("That doesn't look like a PropHouse invite link");
+  location.hash = 'g='+id;
+}
+function toggleGroupMenu(force){
+  const open = force!==undefined ? force : $('groupMenu').classList.contains('hide');
+  $('groupMenu').classList.toggle('hide', !open);
+  if(open) $('inviteLink').value = inviteLink(GROUP_ID);
+}
+function copyInvite(){
+  const link = inviteLink(GROUP_ID);
+  const done = () => toast('Invite link copied — anyone with it can see and bet in this group');
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, ()=>{ $('inviteLink').select(); document.execCommand('copy'); done(); });
+  else { $('inviteLink').select(); document.execCommand('copy'); done(); }
+}
+function renameGroup(){
+  const v = (prompt('Rename this group', groupName) || '').trim().slice(0,40);
+  if(!v || v===groupName) return;
+  metaRef.child('name').set(v).catch(e=>toast("Couldn't rename — "+e.message));
+}
+function leaveGroup(){ toggleGroupMenu(false); location.hash = ''; }
+document.addEventListener('click', e=>{ if(!e.target.closest('#groupMenu') && !e.target.closest('#groupBtn')) $('groupMenu').classList.add('hide'); });
+window.addEventListener('hashchange', ()=>location.reload());   // switching groups = a fresh start with the new group's data
+
 renderAll();
-loadSetup();
+if(!GROUP_ID) showLanding(false);
+else metaRef.once('value').then(snap=>{
+  const meta = snap.val();
+  if(!meta){ forgetGroup(GROUP_ID); return showLanding(true); }   // a mistyped or half-copied link
+  document.body.classList.remove('no-group', 'booting');
+  metaRef.on('value', s=>{ groupName = (s.val()||{}).name || 'Unnamed group'; $('groupName').textContent = groupName; document.title = groupName+' · PropHouse'; rememberGroup(GROUP_ID, groupName); });
+  loadSetup();
+}).catch(e=>{ showLanding(true); toast("Couldn't open that group — "+e.message); });
 </script>
 </body>
 </html>
