@@ -47,6 +47,15 @@
     nav a{flex:1;text-align:center;padding:7px 4px}
   }
 
+  /* board mode toggle */
+  .board-mode{display:inline-flex;background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:3px;gap:2px;margin-bottom:14px}
+  .board-mode button{background:none;border:0;color:var(--dim);font-size:13px;font-weight:600;padding:6px 16px;border-radius:8px;cursor:pointer;transition:color .15s,background .15s}
+  .board-mode button:hover{color:var(--ink)}
+  .board-mode button.on{color:var(--ink);background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--edge-2),0 1px 2px rgba(0,0,0,.4)}
+  .board-mode button#mode-combo.on{color:var(--acc)}
+  .combo-tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--acc);
+    background:var(--acc-soft);padding:1px 6px;border-radius:999px;vertical-align:1px;margin-right:2px}
+
   /* player picker */
   .roster-chips{display:flex;gap:8px;margin:0 -16px 20px;overflow-x:auto;padding:2px 16px 4px;scroll-padding-inline:16px;scroll-snap-type:x proximity;scrollbar-width:none}
   .roster-chips::-webkit-scrollbar{display:none}
@@ -297,11 +306,13 @@
 
   <!-- BOARD -->
   <section id="tab-board">
+    <div class="board-mode"><button id="mode-players" class="on" onclick="setBoardMode('players')">Players</button><button id="mode-combo" onclick="setBoardMode('combo')">Combo</button></div>
     <div class="roster-chips" id="rosterChips"></div>
     <div class="phead"><h2 id="pname" onclick="editPname()" title="Click to rename"></h2><span class="src" id="psrc"></span><button class="p-remove hide" id="pRemove" onclick="removeSelectedPlayer()" title="Remove player">✕</button></div>
-    <div class="board-note">Lines are set from each player's recent averages once synced — tap a number to override.</div>
+    <div class="board-note" id="boardNote">Lines are set from each player's recent averages once synced — tap a number to override.</div>
     <div id="statList"></div>
     <div class="empty hide" id="boardEmpty">No players yet — add Riot IDs in the Roster tab.</div>
+    <div class="empty hide" id="comboEmpty">Tap two or more players who are queuing together — every line becomes their combined total for that game.</div>
   </section>
 
   <!-- TICKETS -->
@@ -343,13 +354,13 @@
 
 <!-- SLIP -->
 <button class="slip-tab hide" id="slipTab" onclick="toggleSlip()">
-  <span class="n"><b id="slipTabCount">0</b> picks</span><span class="m" id="slipTabMult"></span>
+  <span class="n"><b id="slipTabCount">0</b> <span id="slipTabWord">picks</span></span><span class="m" id="slipTabMult"></span>
 </button>
 <div class="slip-backdrop" id="slipBackdrop" onclick="toggleSlip()"></div>
 <div class="slip" id="slip">
   <div class="slip-inner">
     <div class="slip-top">
-      <span class="cnt">Slip · <b id="slipCount">0</b> picks</span>
+      <span class="cnt">Slip · <b id="slipCount">0</b> <span id="slipWord">picks</span></span>
       <span class="mult" id="slipMult"></span>
       <button class="slip-close" onclick="toggleSlip()" title="Minimize">✕</button>
     </div>
@@ -456,9 +467,12 @@ const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
    Tuned on a walk-forward backtest of the group's real games (~8k legs): players drift back toward
    their longer-run level after a hot/cold 5, and 5 games pin the true average down only loosely,
    so the expected value is blended with the full history and the spread is widened to match. */
-const P_FLOOR = 0.02;
+const P_FLOOR = 0.02;        // never price a leg rarer than 2% (50x) or surer than 98% (1.02x) — keeps tiny samples from producing silly numbers
 const RECENT_WEIGHT = 0.5;   // expected value = this much last-5 average + the rest full-history average
-const SPREAD_INFLATE = 1.35; // variance multiplier for how loosely ~5-10 games pin a player down   // never price a leg rarer than 2% (50x) or surer than 98% (1.02x) — keeps tiny samples from producing silly numbers
+const SPREAD_INFLATE = 1.35; // variance multiplier for how loosely ~5-10 games pin a player down
+// how teammates' stats move together in the same game, measured on the group's real shared games
+// (215 teammate pairs): deaths rise and fall together with round count, while frags are competed for
+const TEAMMATE_CORR = {deaths:0.65, fhk:-0.1, fb:-0.1, perf:-0.15};
 const mean = a => a.reduce((x,y)=>x+y,0)/a.length;
 function sampleVar(a){ if(a.length<2) return 0; const m=mean(a); return a.reduce((x,v)=>x+(v-m)*(v-m),0)/(a.length-1); }
 function countCdf(k, mu, v){
@@ -476,14 +490,27 @@ function normCdf(z){   // Abramowitz-Stegun 7.1.26, |error| < 1.5e-7
   const e=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-z*z/2);
   return z>=0 ? (1+e)/2 : (1-e)/2;
 }
-function hitChance(r, statKey, line, dir){
-  // chance this leg wins, given it doesn't push (a push just drops the leg), or null with too little data
+function statMoments(r, statKey){
+  // expected value and variance of one game's stat for a player — or for a combo, of the members' total
+  if(r && r.members){
+    const parts = r.members.map(m=>statMoments(m, statKey));
+    if(!parts.length || parts.some(x=>!x)) return null;
+    const rho = TEAMMATE_CORR[statKey] || 0;
+    let mu = 0, v = 0;
+    parts.forEach((a,i)=>{ mu += a.mu; v += a.v; for(let j=i+1;j<parts.length;j++) v += 2*rho*Math.sqrt(a.v*parts[j].v); });
+    return {mu, v: Math.max(v, 0)};
+  }
   const hist = r && r.samples && r.samples[statKey];
   if(!hist || hist.length<3) return null;
-  const st = STATS.find(s=>s.key===statKey) || {};
   const recent = (r.avg && r.avg[statKey]!=null) ? r.avg[statKey] : mean(hist);
-  const mu = RECENT_WEIGHT*recent + (1-RECENT_WEIGHT)*mean(hist);
-  const spread = SPREAD_INFLATE*sampleVar(hist);
+  return {mu: RECENT_WEIGHT*recent + (1-RECENT_WEIGHT)*mean(hist), v: SPREAD_INFLATE*sampleVar(hist)};
+}
+function hitChance(r, statKey, line, dir){
+  // chance this leg wins, given it doesn't push (a push just drops the leg), or null with too little data
+  const mm = statMoments(r, statKey);
+  if(!mm) return null;
+  const st = STATS.find(s=>s.key===statKey) || {};
+  const mu = mm.mu, spread = mm.v;
   let pOver, pUnder;
   if(st.continuous){
     const sd = Math.max(Math.sqrt(spread), 0.08*Math.max(mu,1));   // small floor so a freakishly steady stretch can't make the curve a cliff
@@ -538,6 +565,10 @@ let actuals = {};  // "playerId|statKey" -> value
 let startingBalances = {};   // lowercase bettor name -> starting bankroll (defaults to DEFAULT_BANKROLL if absent)
 let editingName = false;
 let editingTicket = null;
+let boardMode = 'players';   // 'players' (one player's lines) | 'combo' (several players' combined lines)
+let comboSel = [];           // roster ids in the combo being built, in tap order
+const comboLines = {};       // comboId -> {statKey: line} — this device's own line tweaks for a combo
+const COMBO_MAX = 5;         // a full team
 
 const $ = id => document.getElementById(id);
 const genId = () => 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -618,9 +649,10 @@ function addPlayer(){
   syncPlayer(roster.length-1);   // auto-sync on add
 }
 function removePlayer(i){
-  const gone = displayName(roster[i]);
+  const gone = displayName(roster[i]), goneId = roster[i].id;
   roster.splice(i,1);
-  picks = picks.filter(x=>x.p!==i).map(x=>({...x, p: x.p>i ? x.p-1 : x.p}));
+  picks = picks.filter(x=>x.cid ? !x.members.includes(goneId) : x.p!==i).map(x=>x.cid ? x : ({...x, p: x.p>i ? x.p-1 : x.p}));
+  comboSel = comboSel.filter(id=>id!==goneId);
   if(selected>=roster.length) selected = Math.max(0, roster.length-1);
   toast(gone+' removed');
   pushRoster(); renderAll();
@@ -735,12 +767,66 @@ async function syncPlayer(i){
 /* ================= board ================= */
 const displayName = r => r.label || (r.accounts && r.accounts[0] && r.accounts[0].name) || '?';
 
+/* ---- combos ----
+   A combo is a few players taken together: each line is their combined total in one game,
+   set at the sum of their last-5 averages, and priced off their combined spread (see statMoments).
+   Legs carry the member ids, so they survive roster reordering and grade off a game they shared. */
+const comboIdFor = ids => 'combo:'+[...ids].sort().join('+');
+function comboPlayer(ids){
+  const members = (ids||[]).map(id=>roster.find(r=>r.id===id));
+  if(!members.length || members.some(m=>!m)) return null;   // someone has been removed from the roster
+  const id = comboIdFor(ids), avg = {}, lines = {};
+  STATS.forEach(s=>{
+    const parts = members.map(m=>m.avg && m.avg[s.key]!=null ? m.avg[s.key] : null);
+    if(parts.every(v=>v!==null)) avg[s.key] = parts.reduce((a,b)=>a+b,0);
+    const own = (comboLines[id]||{})[s.key];
+    const fallback = members.reduce((a,m)=>a+(((m.lines||{})[s.key]) ?? s.def),0);
+    lines[s.key] = own!==undefined ? own : toHalf(avg[s.key]!==undefined ? avg[s.key] : fallback);
+  });
+  return {id, members, memberIds: members.map(m=>m.id), label: members.map(displayName).join(' + '), avg, lines};
+}
+// what the board is showing lines for right now: one player, or the combo being built (null if neither)
+function boardSubject(){
+  if(boardMode==='combo') return comboSel.length>=2 ? comboPlayer(comboSel) : null;
+  return roster[selected] || null;
+}
+const pickOn = (x, subj) => subj && (boardMode==='combo' ? x.cid===subj.id : (!x.cid && x.p===selected));
+const pickName = x => x.cid ? ((comboPlayer(x.members)||{}).label || x.pname || 'Combo') : displayName(roster[x.p]);
+function setBoardMode(mode){ boardMode = mode; editingName = false; renderAll(); }
+function toggleComboMember(i){
+  const id = roster[i].id, at = comboSel.indexOf(id);
+  if(at>=0) comboSel.splice(at,1);
+  else if(comboSel.length>=COMBO_MAX) return toast('A combo can have up to '+COMBO_MAX+' players');
+  else comboSel.push(id);
+  renderAll();
+}
+
 function renderRoster(){
+  const combo = boardMode==='combo';
+  $('mode-players').classList.toggle('on', !combo);
+  $('mode-combo').classList.toggle('on', combo);
   $('boardEmpty').classList.toggle('hide', roster.length>0);
+  $('comboEmpty').classList.toggle('hide', !combo || !roster.length || comboSel.length>=2);
+  $('boardNote').textContent = combo
+    ? 'Each line is the players\' combined total in one game, set at the sum of their recent averages — tap a number to override.'
+    : 'Lines are set from each player\'s recent averages once synced — tap a number to override.';
   $('rosterChips').innerHTML = roster.map((r,i)=>{
-    const n = picks.filter(x=>x.p===i).length;
+    if(combo){
+      const at = comboSel.indexOf(r.id);
+      return `<div class="pchip ${at>=0?'on':''}" onclick="toggleComboMember(${i})"><span class="av">${at>=0 ? at+1 : esc(displayName(r).trim().charAt(0)||'?')}</span><span class="txt"><span class="lbl">${esc(displayName(r))}</span><span class="n"></span></span></div>`;
+    }
+    const n = picks.filter(x=>!x.cid && x.p===i).length;
     return `<div class="pchip ${i===selected?'on':''}" onclick="selectPlayer(${i})"><span class="av">${esc(displayName(r).trim().charAt(0)||'?')}</span><span class="txt"><span class="lbl">${esc(displayName(r))}</span><span class="n">${n? n+' picked':''}</span></span></div>`;
   }).join('');
+  document.querySelector('.phead').classList.toggle('hide', combo && comboSel.length<2);
+  $('boardNote').classList.toggle('hide', (combo && comboSel.length<2) || !roster.length);
+  if(combo){
+    const c = boardSubject();
+    $('pname').textContent = c ? c.label : '';
+    $('psrc').textContent = c ? 'combo · '+c.members.length+' players · lines = sum of last-5 averages' : '';
+    $('pRemove').classList.add('hide');
+    return;
+  }
   const r = roster[selected];
   if(r){
     $('pname').innerHTML = editingName
@@ -758,7 +844,7 @@ function removeSelectedPlayer(){
   if(!confirm('Remove '+displayName(r)+' from the roster? This also clears any in-progress picks for them.')) return;
   removePlayer(selected);
 }
-function editPname(){ if(!roster[selected] || editingName) return; editingName=true; renderRoster(); }
+function editPname(){ if(boardMode==='combo' || !roster[selected] || editingName) return; editingName=true; renderRoster(); }
 function saveName(){
   const v = $('nameEdit').value.trim();
   const r = roster[selected];
@@ -788,13 +874,14 @@ const oddsHintText = (pk, r, sk, line) => {
 };
 
 function renderStats(){
-  const r = roster[selected];
+  const r = boardSubject();
   if(!r){ $('statList').innerHTML=''; return; }
+  const size = r.members ? r.members.length : 1;
   $('statList').innerHTML = STATS.map(s=>{
     const line = r.lines[s.key];
     const avg = r.avg[s.key];
-    const pk = picks.find(x=>x.p===selected && x.s===s.key);
-    const [lo,hi] = sliderBounds(s.max);
+    const pk = picks.find(x=>pickOn(x,r) && x.s===s.key);
+    const [lo,hi] = sliderBounds(s.max*size);
     return `<div class="stat">
       <div class="stat-head">
         <span class="name">${s.label}${avg!==undefined?'<span class="avg">avg '+avg.toFixed(1)+'</span>':''}</span>
@@ -807,8 +894,8 @@ function renderStats(){
         <span class="odds-hint" id="oddsHint-${s.key}">${oddsHintText(pk, r, s.key, line)}</span>
       </div>
       <div class="stat-btns">
-        <button class="dir ${pk&&pk.dir==='less'?'on-less':''}" onclick="pick(${selected},'${s.key}','less')">Less</button>
-        <button class="dir ${pk&&pk.dir==='more'?'on-more':''}" onclick="pick(${selected},'${s.key}','more')">More</button>
+        <button class="dir ${pk&&pk.dir==='less'?'on-less':''}" onclick="pickStat('${s.key}','less')">Less</button>
+        <button class="dir ${pk&&pk.dir==='more'?'on-more':''}" onclick="pickStat('${s.key}','more')">More</button>
       </div>
     </div>`;
   }).join('');
@@ -816,7 +903,8 @@ function renderStats(){
 
 // fires continuously while dragging/typing — updates numbers in place without a full re-render so the slider doesn't lose the drag
 function onSlide(sk, val, source){
-  const r = roster[selected];
+  const r = boardSubject();
+  if(!r) return;
   const line = Number(val);
   if(isNaN(line)) return;
   // only ever write into the OTHER control — reassigning a range input's own .value while it's
@@ -826,7 +914,7 @@ function onSlide(sk, val, source){
   if(source!=='slider'){ const sliderEl=$('lineSlider-'+sk); if(sliderEl) sliderEl.value = val; }
   const sliderEl = $('lineSlider-'+sk);
   if(sliderEl) sliderEl.style.setProperty('--p', sliderPct(line, Number(sliderEl.min), Number(sliderEl.max))+'%');   // a style write doesn't interrupt an active drag
-  const pk = picks.find(x=>x.p===selected && x.s===sk);
+  const pk = picks.find(x=>pickOn(x,r) && x.s===sk);
   const hintEl = $('oddsHint-'+sk);
   if(hintEl) hintEl.textContent = oddsHintText(pk, r, sk, line);
   if(pk){ pk.line = line; pk.odds = legOdds(r, sk, line, pk.dir); renderSlip(); }
@@ -837,6 +925,14 @@ function commitLine(sk, val){
   const raw = Number(val);
   if(isNaN(raw)) return;
   const line = toHalf(raw);
+  if(boardMode==='combo'){   // combo lines are this device's own — nothing shared to broadcast
+    const c = boardSubject(); if(!c) return;
+    comboLines[c.id] = {...(comboLines[c.id]||{}), [sk]: line};
+    const cp = picks.find(x=>x.cid===c.id && x.s===sk);
+    if(cp){ cp.line = line; cp.odds = legOdds(comboPlayer(c.memberIds), sk, line, cp.dir); }
+    renderAll();
+    return;
+  }
   // apply locally right away — the person adjusting it sees it settle instantly
   roster[selected].lines[sk] = line;
   const pk = picks.find(x=>x.p===selected && x.s===sk);
@@ -850,6 +946,20 @@ function commitLine(sk, val){
   lineCommitTimers[sk] = setTimeout(()=>{ pushRoster(); }, 500);
 }
 
+function pickStat(s, dir){
+  if(boardMode!=='combo') return pick(selected, s, dir);
+  const c = boardSubject(); if(!c) return;
+  const ex = picks.find(x=>x.cid===c.id && x.s===s);
+  if(ex && ex.dir===dir){ picks = picks.filter(x=>x!==ex); }
+  else if(ex){ ex.dir = dir; ex.odds = legOdds(c, s, ex.line, dir); }
+  else {
+    const wasEmpty = picks.length===0;
+    const line = c.lines[s];
+    picks.push({cid:c.id, members:c.memberIds, s, line, dir, odds: legOdds(c, s, line, dir)});
+    if(wasEmpty) openSlip();
+  }
+  renderAll();
+}
 function pick(p, s, dir){
   const ex = picks.find(x=>x.p===p && x.s===s);
   if(ex && ex.dir===dir){ picks = picks.filter(x=>x!==ex); }
@@ -903,13 +1013,14 @@ function renderLeaderboard(){
 
 function renderSlip(){
   $('slipCount').textContent = picks.length;
+  $('slipWord').textContent = $('slipTabWord').textContent = picks.length===1 ? 'pick' : 'picks';
   const m = picks.length ? slipMultiplier(picks) : 0;
   $('slipMult').textContent = picks.length ? (m+'x payout') : '';
   $('slipEmpty').classList.toggle('hide', picks.length>0);
   $('slipForm').classList.toggle('hide', picks.length===0);
   $('slipPicks').innerHTML = picks.map((x,i)=>`
     <div class="pick">
-      <span>${esc(displayName(roster[x.p]))} · ${statLabel(x.s)}
+      <span>${x.cid?'<span class="combo-tag">Combo</span> ':''}${esc(pickName(x))} · ${statLabel(x.s)}
         <span class="d-${x.dir}">${x.dir==='more'?'More':'Less'} ${x.line}</span> <span class="leg-odds">${(x.odds||2).toFixed(2)}x</span></span>
       <button class="x" onclick="removePick(${i})">✕</button>
     </div>`).join('');
@@ -944,7 +1055,9 @@ function placeSlip(){
   if(stake > bal) return toast(who+"'s balance is "+bal.toFixed(0)+' — lower your stake');
   const id = ticketsRef.push().key;   // unique key generated client-side, no counter to collide on
   const ticket = { id, who, stake,
-    picks: picks.map(x=>({...x, pid:roster[x.p].id, pname:displayName(roster[x.p]), result:null})),
+    picks: picks.map(x=>x.cid
+      ? ({cid:x.cid, members:x.members, s:x.s, line:x.line, dir:x.dir, odds:x.odds, pid:x.cid, pname:pickName(x), result:null})
+      : ({...x, pid:roster[x.p].id, pname:displayName(roster[x.p]), result:null})),
     status:'pending', payout:0 };
   tickets.push(ticket);
   ticketsRef.child(id).set(ticket);   // only this ticket's own path — can't clobber anyone else's
@@ -988,7 +1101,7 @@ function saveTicketEdit(id){
     if(isNaN(line)) return toast('Enter a valid line for every pick');
     const dir = $('editDir-'+id+'-'+i).value;
     const result = $('editResult-'+id+'-'+i).value || null;
-    const player = roster.find(x=>x.id===t.picks[i].pid);
+    const player = t.picks[i].members ? comboPlayer(t.picks[i].members) : roster.find(x=>x.id===t.picks[i].pid);
     picks.push({...t.picks[i], line, dir, result, odds: legOdds(player, t.picks[i].s, line, dir)});
   }
   t.who = who; t.stake = stake; t.picks = picks;
@@ -1037,7 +1150,7 @@ function renderTickets(){
 
     const rows = t.picks.map(x=>{
       const mk = x.result==='win'?'<span class="w">✔</span>':x.result==='loss'?'<span class="l">✘</span>':x.result==='push'?'<span class="p">▬</span>':'<span class="o"></span>';
-      return `<div class="t-pick">${mk} ${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}</div>`;
+      return `<div class="t-pick">${mk} <span>${x.cid?'<span class="combo-tag">Combo</span> ':''}${esc(x.pname)} · ${statLabel(x.s)} ${x.dir==='more'?'More':'Less'} ${x.line}</span></div>`;
     }).join('');
     const foot = t.status==='pending' ? `Stake ${t.stake} · ${slipMultiplier(t.picks)}x if perfect`
       : t.status==='won' ? `Stake ${t.stake} → <b>paid ${t.payout.toFixed(0)}</b>`
@@ -1068,7 +1181,7 @@ function renderSettle(){
   $('settleList').innerHTML = [...combos.entries()].map(([k,x],idx)=>{
     const cur = actuals[k];
     return `<div class="s-row">
-      <span class="lbl">${esc(x.pname)} <span>· ${statLabel(x.s)} (line ${x.line})</span></span>
+      <span class="lbl">${x.cid?'<span class="combo-tag">Combo</span> ':''}${esc(x.pname)} <span>· ${statLabel(x.s)} (line ${x.line})</span></span>
       <input type="number" step="0.1" data-combo="${esc(k)}" placeholder="final" value="${cur!==undefined?cur:''}">
     </div>`;
   }).join('');
@@ -1077,22 +1190,39 @@ function renderSettle(){
 async function autofill(){
   const btn=$('autofillBtn'); btn.disabled=true; btn.textContent='Fetching…';
   const combos = pendingCombos();
-  const pids = [...new Set([...combos.keys()].map(k=>k.split('|')[0]))];
-  const cache = {};
-  for(const pid of pids){
-    const r = roster.find(x=>x.id===pid);
-    if(!r) continue;
-    let best = null;
+  const rowIn = (m, r) => { for(const a of r.accounts){ const row = matchRowFor(m, a); if(row) return row; } return null; };
+  async function matchesFor(r, size){   // a player's recent matches across all their accounts, newest first
+    const seen = new Map();
     for(const acct of r.accounts){
       try{
-        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?size=1');
-        (json.data||[]).forEach(m=>{
-          const row = matchRowFor(m, acct);
-          if(row && (!best || row.gameStart>best.gameStart)) best = row;
-        });
+        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?size='+size);
+        (json.data||[]).forEach(m=>{ if(m && m.metadata) seen.set(m.metadata.match_id, m); });
       }catch(e){ toast(e.message); }
     }
-    if(best) cache[pid] = best;
+    return [...seen.values()].sort((a,b)=>(Date.parse(b.metadata.started_at)||0)-(Date.parse(a.metadata.started_at)||0));
+  }
+  const singles = new Set(), comboLegs = new Map();
+  combos.forEach((x,k)=>{ const pid = k.split('|')[0]; if(x.members) comboLegs.set(pid, x.members); else singles.add(pid); });
+  const cache = {}, missed = [];
+  for(const pid of singles){
+    const r = roster.find(x=>x.id===pid);
+    if(!r) continue;
+    for(const m of await matchesFor(r, 1)){ const row = rowIn(m, r); if(row){ cache[pid] = row; break; } }
+  }
+  // a combo grades off the newest game every member played in — searched in the first member's last 5
+  for(const [cid, ids] of comboLegs){
+    const members = ids.map(id=>roster.find(x=>x.id===id));
+    if(members.some(m=>!m)){ missed.push('a combo with a removed player'); continue; }
+    for(const m of await matchesFor(members[0], 5)){
+      const rows = members.map(r=>rowIn(m, r));
+      if(!rows.every(Boolean)) continue;
+      cache[cid] = Object.fromEntries(STATS.map(s=>{
+        const vals = rows.map(x=>x[s.key]);
+        return [s.key, vals.some(v=>v===null || v===undefined) ? null : vals.reduce((a,b)=>a+b,0)];
+      }));
+      break;
+    }
+    if(!cache[cid]) missed.push(members.map(displayName).join(' + '));
   }
   combos.forEach((x,k)=>{
     const [pid,s] = k.split('|');
@@ -1100,7 +1230,8 @@ async function autofill(){
       actuals[k] = Math.round(cache[pid][s]*10)/10;
   });
   btn.disabled=false; btn.textContent='Pull last match';
-  toast(Object.keys(cache).length ? 'Finals pulled from each player\'s latest match — review, then grade' : 'Nothing fetched');
+  toast(missed.length ? 'No recent game with '+missed.join(', ')+' all in it — type those in'
+    : Object.keys(cache).length ? 'Finals pulled from each player\'s latest match — review, then grade' : 'Nothing fetched');
   pushActuals(); renderSettle();
 }
 
