@@ -780,18 +780,60 @@ function removeAccount(i, ai){
 /* ================= API sync ================= */
 async function hd(path){
   const res = await fetch(API+path);
-  if(res.status===404) throw new Error('Player not found — check Riot ID and region');
-  if(res.status===429) throw new Error('Rate limited — wait a minute and retry');
-  if(res.status===403) throw new Error('The stats proxy only works on the PropHouse site itself — open it from its GitHub Pages link');
-  if(!res.ok) throw new Error('API error '+res.status);
+  const fail = msg => Object.assign(new Error(msg), {status: res.status});
+  if(res.status===404) throw fail('Player not found — check Riot ID and region');
+  if(res.status===429) throw fail('Rate limited — wait a minute and retry');
+  if(res.status===403) throw fail('The stats proxy only works on the PropHouse site itself — open it from its GitHub Pages link');
+  if(!res.ok) throw fail('API error '+res.status);
   return res.json();
+}
+
+/* ---- account identity ----
+   A Riot ID (Name#TAG) can be changed at any time; an account's puuid never changes. Each linked
+   account learns its puuid once, and from then on its games are fetched and matched by puuid, so a
+   rename can't make a player's games silently vanish — the new Riot ID is picked up from the games. */
+const isPuuid = v => typeof v==='string' && /^[0-9a-f-]{36}$/i.test(v);
+async function lookupPuuid(acct){
+  try{
+    const j = await hd('/valorant/v2/account/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag));
+    return isPuuid(j && j.data && j.data.puuid) ? j.data.puuid : null;
+  }catch(e){ if(e.status===429 || e.status===403) throw e; return null; }   // not found → fall back to the Riot ID
+}
+// the puuid that shows up in every one of an account's own games — how a renamed account is recognised
+// when its old Riot ID no longer appears in the match data (two candidates, e.g. an ever-present duo, → unsure → null)
+function inferPuuid(matches){
+  if(matches.length<2) return null;
+  let common = null;
+  for(const m of matches){
+    const ids = new Set((m.players||[]).map(p=>p.puuid).filter(isPuuid));
+    common = common ? new Set([...common].filter(id=>ids.has(id))) : ids;
+  }
+  return common && common.size===1 ? [...common][0] : null;
+}
+// one account's recent matches, by puuid when known (falling back to the Riot ID), plus the puuid used
+async function fetchMatches(acct, query){
+  let puuid = isPuuid(acct.puuid) ? acct.puuid : await lookupPuuid(acct);
+  if(puuid){
+    try{
+      const json = await hd('/valorant/v4/by-puuid/matches/'+acct.region+'/pc/'+puuid+query);
+      return {puuid, matches: (json.data||[]).filter(m=>m && m.metadata)};
+    }catch(e){ if(e.status!==404) throw e; }   // e.g. a proxy that doesn't allow by-puuid yet — use the Riot ID instead
+  }
+  const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+query);
+  const matches = (json.data||[]).filter(m=>m && m.metadata);
+  if(!puuid && !matches.some(m=>findPlayer(m, acct))) puuid = inferPuuid(matches);
+  return {puuid, matches};
+}
+function findPlayer(m, account){
+  const ps = m.players||[];
+  if(isPuuid(account.puuid)){ const p = ps.find(p=>p.puuid===account.puuid); if(p) return p; }
+  return ps.find(p=>p.name && p.name.toLowerCase()===account.name.toLowerCase() && p.tag && p.tag.toLowerCase()===account.tag.toLowerCase()) || null;
 }
 
 function matchRowFor(m, account){
   // pull one linked account's stat line out of a single v4 match object, or null if they weren't in it
   const rounds = (m.rounds||[]).length;
-  const me = (m.players||[]).find(p=>
-    p.name && p.name.toLowerCase()===account.name.toLowerCase() && p.tag && p.tag.toLowerCase()===account.tag.toLowerCase());
+  const me = findPlayer(m, account);
   if(!me || !me.stats || !rounds) return null;
   const st = me.stats;
   const kills = m.kills || [];
@@ -810,6 +852,8 @@ function matchRowFor(m, account){
     // Riot's 0-500 Performance Score (replaced ACS in patch 13.06) — null on pre-13.06 matches, which the averaging skips
     perf: (me.performance && me.performance.score!=null) ? me.performance.score : null,
     gameStart: (m.metadata && Date.parse(m.metadata.started_at)) || 0,
+    puuid: me.puuid, riotNow: me.name && me.tag ? me.name+'#'+me.tag : null,
+    matchId: (m.metadata && m.metadata.match_id) || null,
   };
 }
 
@@ -827,20 +871,38 @@ async function syncPlayer(i){
     // Each account is fetched independently so one bad/mistyped alt can't break the others.
     const pool = [];
     const failures = [];
+    const learned = [];   // {riot, puuid, riotNow} per account, applied once the sync lands
     for(const acct of accounts){
       try{
-        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?mode=competitive&size='+HISTORY_MATCHES);
-        (json.data||[]).forEach(m=>{ const row = matchRowFor(m, acct); if(row) pool.push(row); });
+        const {puuid, matches} = await fetchMatches(acct, '?mode=competitive&size='+HISTORY_MATCHES);
+        const who = {...acct, puuid: puuid || acct.puuid};
+        let newest = null;
+        matches.forEach(m=>{ const row = matchRowFor(m, who); if(row){ pool.push(row); if(!newest || row.gameStart>newest.gameStart) newest = row; } });
+        if(newest && isPuuid(newest.puuid)) learned.push({riot: acct.riot, puuid: newest.puuid, riotNow: newest.riotNow});
       }catch(e){ failures.push(acct.riot); }
     }
     if(!pool.length) throw new Error('No recent competitive matches found for '+label);
     pool.sort((a,b)=>b.gameStart-a.gameStart);
+    const seenMatch = new Set();   // one game counts once, even if the same account ended up linked twice
+    for(let k=pool.length-1;k>=0;k--){ const id = pool[k].matchId; if(id && seenMatch.has(id)) pool.splice(k,1); else if(id) seenMatch.add(id); }
     const history = pool.slice(0, HISTORY_MATCHES);
     const rows = history.slice(0, LINE_MATCHES);
     // roster may have been reassigned wholesale by a Firebase snapshot while we awaited — re-find by identity, not by stale reference/index
     const idx = roster.findIndex(x=>x.id===pid);
     if(idx<0) return;   // player was removed while syncing
     const r = roster[idx];
+    const renamed = [];
+    // pair every update with its account first — applying a rename can make two accounts share a Riot ID
+    learned.map(u=>[u, r.accounts.find(x=>x.riot.toLowerCase()===u.riot.toLowerCase())]).forEach(([u, a])=>{
+      if(!a) return;
+      a.puuid = u.puuid;
+      if(u.riotNow && u.riotNow.toLowerCase()!==a.riot.toLowerCase()){   // they changed their Riot ID — follow it
+        renamed.push(a.riot+' → '+u.riotNow);
+        const {name, tag} = parseRiot(u.riotNow);
+        Object.assign(a, {riot: u.riotNow, name, tag});
+      }
+    });
+    r.accounts = r.accounts.filter((a,i,all)=>!a.puuid || all.findIndex(b=>b.puuid===a.puuid)===i);   // same account linked twice (e.g. old + new name)
     r.samples = r.samples || {};
     STATS.forEach(s=>{
       const ok = v => v!==null && v!==undefined && !isNaN(v);
@@ -855,6 +917,7 @@ async function syncPlayer(i){
     r.matches = rows.length;
     const suffix = accounts.length>1 ? ' across '+(accounts.length-failures.length)+'/'+accounts.length+' accounts' : '';
     toast(label+' synced — lines set from last '+rows.length+' matches'+suffix
+      +(renamed.length ? ' · Riot ID updated: '+renamed.join(', ') : '')
       +(failures.length ? ' (couldn\'t reach '+failures.join(', ')+')' : ''));
     pushRoster();
   }catch(e){
@@ -1289,13 +1352,15 @@ function renderSettle(){
 async function autofill(){
   const btn=$('autofillBtn'); btn.disabled=true; btn.textContent='Fetching…';
   const combos = pendingCombos();
-  const rowIn = (m, r) => { for(const a of r.accounts){ const row = matchRowFor(m, a); if(row) return row; } return null; };
+  const known = new Map();   // riot id -> puuid learned during this pull, for accounts not yet synced by puuid
+  const rowIn = (m, r) => { for(const a of r.accounts){ const row = matchRowFor(m, {...a, puuid: a.puuid || known.get(a.riot)}); if(row) return row; } return null; };
   async function matchesFor(r, size){   // a player's recent matches across all their accounts, newest first
     const seen = new Map();
     for(const acct of r.accounts){
       try{
-        const json = await hd('/valorant/v4/matches/'+acct.region+'/pc/'+encodeURIComponent(acct.name)+'/'+encodeURIComponent(acct.tag)+'?size='+size);
-        (json.data||[]).forEach(m=>{ if(m && m.metadata) seen.set(m.metadata.match_id, m); });
+        const {puuid, matches} = await fetchMatches(acct, '?size='+size);
+        if(puuid) known.set(acct.riot, puuid);
+        matches.forEach(m=>seen.set(m.metadata.match_id, m));
       }catch(e){ toast(e.message); }
     }
     return [...seen.values()].sort((a,b)=>(Date.parse(b.metadata.started_at)||0)-(Date.parse(a.metadata.started_at)||0));

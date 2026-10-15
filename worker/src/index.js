@@ -1,7 +1,8 @@
 // Proxy in front of the HenrikDev API: attaches the real key server-side, and keeps the key from
 // being used by anyone but the PropHouse site.
 //  - only the site's own origin (and localhost for development) may call it
-//  - only the match-history endpoint the app actually uses is forwarded
+//  - only the endpoints the app actually uses are forwarded (match history, and the one-time
+//    Riot ID → account id lookup)
 //  - each visitor (by IP) gets a per-minute budget, so one person can't drain the shared key
 //  - identical requests within a minute are answered from memory instead of re-fetched
 // The limit and cache live in this worker instance's memory: best-effort (each Cloudflare location
@@ -9,7 +10,11 @@
 
 const ALLOWED_ORIGINS = ["https://birby4438.github.io"];
 const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-const ALLOWED_PATH = /^\/valorant\/v4\/matches\/[a-z]+\/[a-z]+\/[^/]+\/[^/]+$/;   // /valorant/v4/matches/{region}/{platform}/{name}/{tag}
+const ALLOWED_PATHS = [
+  /^\/valorant\/v4\/matches\/[a-z]+\/[a-z]+\/[^/]+\/[^/]+$/,               // /valorant/v4/matches/{region}/{platform}/{name}/{tag}
+  /^\/valorant\/v4\/by-puuid\/matches\/[a-z]+\/[a-z]+\/[0-9a-f-]{36}$/,     // /valorant/v4/by-puuid/matches/{region}/{platform}/{puuid}
+  /^\/valorant\/v2\/account\/[^/]+\/[^/]+$/,                                 // /valorant/v2/account/{name}/{tag}
+];
 
 const RATE_LIMIT = 40;                 // requests per IP per window — a full-roster sync is ~15
 const RATE_WINDOW_MS = 60_000;
@@ -30,7 +35,7 @@ export default {
     if (req.method !== "GET") return json({ error: "Method not allowed" }, 405, origin);
 
     const url = new URL(req.url);
-    if (!ALLOWED_PATH.test(url.pathname)) return json({ error: "Not found" }, 404, origin);
+    if (!ALLOWED_PATHS.some(re => re.test(url.pathname))) return json({ error: "Not found" }, 404, origin);
 
     const ip = req.headers.get("CF-Connecting-IP") || "unknown";
     const now = Date.now();
