@@ -27,6 +27,18 @@
         "startingBalances": {
           ".write": "root.child('groups').child($gid).child('meta').exists()"
         },
+        "worlds": {
+          "$tid": {
+            ".validate": "$tid.matches(/^[0-9]+$/) && $tid.length <= 24",
+            "picks": {
+              ".write": "root.child('groups').child($gid).child('meta').exists()",
+              "$who": {
+                ".validate": "$who.length <= 120 && newData.hasChildren(['name', 'picks', 'updatedAt']) && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 40 && newData.child('updatedAt').val() === now && newData.child('picks').hasChildren(['qf', 'sf', 'champ', 'score'])"
+              }
+            },
+            "$other": { ".validate": false }
+          }
+        },
 
         "$other": { ".validate": false }
       }

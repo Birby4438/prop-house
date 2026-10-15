@@ -86,6 +86,59 @@
   .recent .go{margin-left:auto;color:var(--acc);font-size:12.5px;font-weight:600}
   @media (max-width:480px){ .land h1{font-size:25px} .land{margin-top:16px} .group-menu{left:auto;right:0} }
 
+  /* worlds bracket */
+  #tab-worlds{max-width:960px}
+  .w-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .w-hero h2{font-size:24px;font-weight:800;letter-spacing:-.03em}
+  .w-hero p{color:var(--dim);font-size:13px;margin-top:3px;line-height:1.5}
+  .w-pill{flex:none;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:var(--acc-soft);color:var(--acc)}
+  .w-pill.live{background:var(--less-soft);color:var(--less)}
+  .w-pill.done{background:var(--more-soft);color:var(--more)}
+  .w-card{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r-lg);padding:14px;margin-bottom:12px}
+  .w-card h3{font-size:14px;font-weight:700;margin-bottom:8px}
+  .w-muted{color:var(--dim);font-size:13px;line-height:1.55}
+  .w-muted b{color:var(--ink)}
+  .w-bar{height:6px;border-radius:999px;background:var(--panel-2);overflow:hidden;margin-top:10px}
+  .w-bar>span{display:block;height:100%;background:var(--acc);border-radius:999px}
+  .w-entrant{display:inline-flex;align-items:center;gap:6px;margin:6px 6px 0 0;padding:4px 10px 4px 4px;border-radius:999px;background:var(--panel-2);font-size:12.5px;font-weight:600}
+  .w-entrant .av{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--acc-soft);color:var(--acc);font-size:10.5px;text-transform:uppercase}
+  .bracket{display:grid;gap:14px}
+  @media (min-width:720px){ .bracket{grid-template-columns:1.1fr 1fr .9fr;align-items:center} }
+  .round h4{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:0 2px 8px}
+  .round .slots{display:grid;gap:10px}
+  @media (min-width:720px){ .round.sf .slots{gap:120px} .round.fin .slots{gap:0} }
+  .bm{background:var(--panel);border:1px solid var(--edge);border-radius:14px;padding:6px;display:grid;gap:4px}
+  .bm .when{font-size:10.5px;color:var(--faint);padding:2px 6px 0;font-variant-numeric:tabular-nums}
+  .bt{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border-radius:10px;border:1px solid transparent;background:var(--panel-2);
+    color:var(--ink);font-size:13.5px;font-weight:600;cursor:pointer;text-align:left;transition:border-color .15s,background .15s}
+  .bt:disabled{cursor:default}
+  .bt:not(:disabled):hover{border-color:var(--edge-2)}
+  .bt img{width:22px;height:22px;object-fit:contain;flex:none}
+  .bt .ph{width:22px;height:22px;border-radius:6px;background:var(--bg);flex:none}
+  .bt .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bt .sc{font-variant-numeric:tabular-nums;color:var(--dim);font-weight:700}
+  .bt.tbd{color:var(--faint);font-weight:500;background:transparent;border:1px dashed var(--edge-2)}
+  .bt.picked{border-color:var(--acc);background:var(--acc-soft)}
+  .bt.won{color:var(--ink)} .bt.lost{color:var(--faint)} .bt.lost img{opacity:.45}
+  .bt.right{border-color:var(--more);background:var(--more-soft)}
+  .bt.wrong{border-color:rgba(251,113,133,.55);background:var(--less-soft)}
+  .w-save{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .w-save input{flex:1;min-width:140px;background:var(--bg);border:1px solid var(--edge);color:var(--ink);border-radius:var(--r-sm);padding:10px 12px;font-size:14px;outline:none}
+  .w-save input:focus,.w-save select:focus{border-color:var(--acc)}
+  .w-save select{background-color:var(--bg);border:1px solid var(--edge);color:var(--ink);border-radius:var(--r-sm);padding:10px 12px;font-size:14px;outline:none}
+  .w-note{font-size:12px;color:var(--faint);margin-top:8px}
+  .w-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r-md);background:var(--panel-2);border:1px solid var(--edge);cursor:pointer}
+  .w-row+.w-row{margin-top:6px}
+  .w-row .rk{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--bg);font-size:12px;font-weight:700;color:var(--faint);flex:none}
+  .w-row:nth-child(1) .rk{background:#FBBF24;color:#1A1405}
+  .w-row .nm{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .w-row .pts{font-weight:800;font-variant-numeric:tabular-nums}
+  .w-row .mx{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+  .w-row img{width:22px;height:22px;object-fit:contain}
+  .w-row.late{opacity:.55}
+  .w-detail{padding:8px 4px 4px 50px;font-size:12.5px;color:var(--dim);line-height:1.7}
+  .w-detail .ok{color:var(--more)} .w-detail .no{color:var(--less)} .w-detail .tb{color:var(--faint)}
+
   /* board mode toggle */
   .board-mode{display:inline-flex;background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:3px;gap:2px;margin-bottom:14px}
   .board-mode button{background:none;border:0;color:var(--dim);font-size:13px;font-weight:600;padding:6px 16px;border-radius:8px;cursor:pointer;transition:color .15s,background .15s}
@@ -369,7 +422,7 @@
       </div>
     </div>
     <nav>
-      <a id="nav-board" class="on" onclick="setTab('board')">Board</a><a id="nav-tickets" onclick="setTab('tickets')">Tickets</a><a id="nav-settle" onclick="setTab('settle')">Settle</a><a id="nav-roster" onclick="setTab('roster')">Roster</a>
+      <a id="nav-board" class="on" onclick="setTab('board')">Board</a><a id="nav-tickets" onclick="setTab('tickets')">Tickets</a><a id="nav-settle" onclick="setTab('settle')">Settle</a><a id="nav-roster" onclick="setTab('roster')">Roster</a><a id="nav-worlds" onclick="setTab('worlds')">Worlds</a>
     </nav>
   </div>
 </header>
@@ -427,6 +480,11 @@
       <button class="btn btn-ghost" id="autofillBtn" onclick="autofill()">Pull last match</button>
       <button class="btn" onclick="gradeAll()">Grade tickets</button>
     </div>
+  </section>
+
+  <!-- WORLDS BRACKET -->
+  <section id="tab-worlds" class="hide">
+    <div id="worldsBody"><div class="empty">Loading Worlds…</div></div>
   </section>
 
   <!-- ROSTER -->
@@ -748,12 +806,13 @@ function loadSetup(){
 
 /* ================= tabs ================= */
 function setTab(name){
-  ['board','tickets','settle','roster'].forEach(t=>{
+  ['board','tickets','settle','roster','worlds'].forEach(t=>{
     $('tab-'+t).classList.toggle('hide', t!==name);
     $('nav-'+t).classList.toggle('on', t===name);
   });
   $('lbTab').classList.toggle('hide', name!=='tickets');
   if(name!=='tickets') closeLeaderboard();
+  if(name==='worlds') openWorlds();
   renderAll();
 }
 
@@ -1613,6 +1672,237 @@ function renderRosterTab(){
       </div>
     </div>`).join('')
     : '<div class="empty">No players saved yet.</div>';
+}
+
+/* ================= Worlds bracket challenge =================
+   Teams, schedule and results come straight from lolesports.com's own public data feed (it allows
+   any site to read it). Each group fills in its own brackets; picks are saved with the server's
+   clock, so a bracket saved after the first quarterfinal starts is marked late and doesn't count,
+   whatever the screen showed. Scoring is by team (did the team you picked win its quarterfinal /
+   reach the final / win it all), so it holds however the real bracket ends up paired. */
+const LOLESPORTS = 'https://esports-api.lolesports.com/persisted/gw';
+const LOLESPORTS_KEY = '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z';   // public — lolesports.com ships this same key to every visitor
+const WORLDS_LEAGUE = '98767975604431411';
+const BRACKET_PTS = {qf:10, sf:20, champ:40};
+const W_REFRESH_MS = 2*60*1000;
+let worlds = null, worldsErr = '', worldsLoading = null, worldsFetchedAt = 0, worldsAll = {}, worldsSub = false, worldsTimer = null, worldsOpenRow = null;
+let worldsDraft = {name:'', qf:[null,null,null,null], sf:[null,null], champ:null, score:'', loadedFor:null};
+
+async function lolesports(path){
+  const r = await fetch(LOLESPORTS+path, {headers:{'x-api-key': LOLESPORTS_KEY}});
+  if(!r.ok) throw new Error('lolesports.com answered '+r.status);
+  return (await r.json()).data || {};
+}
+const httpsImg = u => typeof u==='string' ? u.replace(/^http:\/\//, 'https://') : '';
+const isTbdTeam = t => !t || !t.id || t.id==='0' || !t.code || t.code==='TBD';
+function pickTournament(list, now){   // the Worlds on right now, else the next one, else the latest
+  const ts = (list||[]).map(t=>({...t, s:Date.parse(t.startDate), e:Date.parse(t.endDate)+864e5})).filter(t=>t.s);
+  return ts.find(t=>t.s<=now && now<=t.e) || ts.filter(t=>t.s>now).sort((a,b)=>a.s-b.s)[0] || ts.sort((a,b)=>b.s-a.s)[0] || null;
+}
+async function fetchWorlds(){
+  const tl = await lolesports('/getTournamentsForLeague?hl=en-US&leagueId='+WORLDS_LEAGUE);
+  const t = pickTournament((((tl.leagues||[])[0])||{}).tournaments, Date.now());
+  if(!t) throw new Error('No Worlds tournament is listed yet');
+  const st = await lolesports('/getStandings?hl=en-US&tournamentId='+t.id);
+  const stages = (((st.standings||[])[0])||{}).stages || [];
+  const ko = stages.find(x=>/knockout/i.test(x.name||''));
+  const raw = ko ? (ko.sections||[]).flatMap(sec=>sec.matches||[]) : [];
+  const times = {}, swiss = {done:0, total:0};
+  let token = '';
+  for(let page=0; page<6; page++){   // schedule pages: knockout start times (locking) + Swiss progress (pre-draw screen)
+    const sc = (await lolesports('/getSchedule?hl=en-US&leagueId='+WORLDS_LEAGUE+(token ? '&pageToken='+encodeURIComponent(token) : ''))).schedule || {};
+    (sc.events||[]).forEach(e=>{
+      const at = Date.parse(e.startTime);
+      if(e.match && e.match.id) times[e.match.id] = at;
+      if(/swiss/i.test(e.blockName||'') && at>=t.s && at<=t.e){ swiss.total++; if(e.state==='completed') swiss.done++; }
+    });
+    if(raw.length && raw.every(m=>times[m.id])) break;
+    token = sc.pages && sc.pages.newer;
+    if(!token) break;
+  }
+  // feed order is the bracket: 4 quarterfinals, then semifinal 1 (QF1/QF2 winners), semifinal 2 (QF3/QF4), then the final
+  const matches = raw.slice(0,7).map((m,i)=>({
+    id: m.id, round: i<4 ? 'qf' : i<6 ? 'sf' : 'final', state: m.state || 'unstarted', at: times[m.id] || null,
+    teams: (m.teams||[]).map(x=>isTbdTeam(x) ? null : {id:x.id, code:x.code, name:x.name, image:httpsImg(x.image), outcome:(x.result||{}).outcome||null, wins:(x.result||{}).gameWins}),
+  }));
+  const qfs = matches.filter(m=>m.round==='qf');
+  return {
+    tid: t.id, name: String(t.slug||'worlds').replace(/^worlds_?/i, 'Worlds ').trim(), start: t.s, end: t.e, matches, swiss,
+    lockAt: qfs.map(m=>m.at).filter(Boolean).sort((a,b)=>a-b)[0] || null,
+    drawn: matches.length===7 && qfs.every(m=>m.teams.length===2 && m.teams.every(Boolean)),
+  };
+}
+const winnerOf = m => m && m.state==='completed' ? ((m.teams.find(t=>t && t.outcome==='win'))||{}).id || null : null;
+function bracketResults(w){
+  const by = r => w.matches.filter(m=>m.round===r);
+  const fin = by('final')[0];
+  const eliminated = new Set();
+  w.matches.forEach(m=>{ if(m.state==='completed') m.teams.forEach(t=>{ if(t && t.outcome==='loss') eliminated.add(t.id); }); });
+  const champ = winnerOf(fin);
+  let finalScore = null;
+  if(champ){ const wt = fin.teams.find(t=>t && t.id===champ), lt = fin.teams.find(t=>t && t.id!==champ); if(wt && lt) finalScore = wt.wins+'-'+lt.wins; }
+  return {qfWinners: new Set(by('qf').map(winnerOf).filter(Boolean)), finalists: new Set(by('sf').map(winnerOf).filter(Boolean)), champ, finalScore, eliminated};
+}
+// points so far, plus the most still reachable with the picks that are still alive
+function scoreBracket(p, res){
+  if(!p) return {pts:0, max:0};
+  let pts = 0, open = 0;
+  (p.qf||[]).filter(Boolean).forEach(id=>{ if(res.qfWinners.has(id)) pts += BRACKET_PTS.qf; else if(!res.eliminated.has(id)) open += BRACKET_PTS.qf; });
+  (p.sf||[]).filter(Boolean).forEach(id=>{ if(res.finalists.has(id)) pts += BRACKET_PTS.sf; else if(!res.eliminated.has(id)) open += BRACKET_PTS.sf; });
+  if(p.champ){ if(res.champ===p.champ) pts += BRACKET_PTS.champ; else if(!res.champ && !res.eliminated.has(p.champ)) open += BRACKET_PTS.champ; }
+  return {pts, max: pts+open};
+}
+const entryKey = name => String(name).trim().toLowerCase().replace(/[.#$\[\]\/%]/g, c=>'%'+c.charCodeAt(0).toString(16));
+const worldsEntries = () => (worlds && (worldsAll[worlds.tid]||{}).picks) || {};
+const worldsLocked = () => !!worlds && ((!!worlds.lockAt && Date.now() >= worlds.lockAt) || worlds.matches.some(m=>m.round==='qf' && m.state!=='unstarted'));
+function worldsStandings(){
+  const res = bracketResults(worlds);
+  return Object.entries(worldsEntries()).map(([k,e])=>{
+    const late = !!worlds.lockAt && typeof e.updatedAt==='number' && e.updatedAt >= worlds.lockAt;
+    return {k, e, late, ...scoreBracket(e.picks, res), tb: !!res.finalScore && !!e.picks && e.picks.score===res.finalScore};
+  }).sort((a,b)=>(a.late-b.late) || (b.pts-a.pts) || (b.tb-a.tb) || (b.max-a.max) || ((a.e.updatedAt||0)-(b.e.updatedAt||0)));
+}
+const fmtWhen = ms => ms ? new Date(ms).toLocaleString([], {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '';
+
+function openWorlds(){
+  if(!worldsSub && groupRef){
+    worldsSub = true;
+    groupRef.child('worlds').on('value', snap=>{ worldsAll = snap.val() || {}; prefillDraft(); renderWorlds(); });
+  }
+  if(!worldsTimer) worldsTimer = setInterval(()=>{ if(document.visibilityState==='visible' && !$('tab-worlds').classList.contains('hide')) refreshWorlds(); }, W_REFRESH_MS);
+  if(Date.now()-worldsFetchedAt > 60000) refreshWorlds(); else renderWorlds();
+}
+function refreshWorlds(){
+  if(worldsLoading) return worldsLoading;
+  worldsLoading = fetchWorlds()
+    .then(w=>{ worlds = w; worldsErr = ''; worldsFetchedAt = Date.now(); prefillDraft(); })
+    .catch(e=>{ worldsErr = e.message || 'Couldn\'t reach lolesports.com'; })
+    .finally(()=>{ worldsLoading = null; renderWorlds(); });
+  return worldsLoading;
+}
+// start the editor from this person's saved bracket (by the name they last used here) the first time it's available
+function prefillDraft(){
+  if(!worlds || worldsDraft.loadedFor===worlds.tid) return;
+  let name = worldsDraft.name;
+  if(!name){ try{ name = localStorage.getItem('prophouse.name') || ''; }catch(e){} }
+  if(!name && $('who')) name = $('who').value.trim();
+  worldsDraft.name = name;
+  const ex = name && worldsEntries()[entryKey(name)];
+  if(ex && ex.picks) loadDraftFrom(ex);
+  if(name || Object.keys(worldsEntries()).length) worldsDraft.loadedFor = worlds.tid;
+}
+function loadDraftFrom(ex){
+  const p = ex.picks || {};
+  Object.assign(worldsDraft, {name: ex.name, qf: [0,1,2,3].map(i=>(p.qf||[])[i]||null), sf: [0,1].map(i=>(p.sf||[])[i]||null), champ: p.champ||null, score: p.score||''});
+}
+function wName(v, commit){
+  worldsDraft.name = v;
+  if(!commit) return;
+  const ex = v.trim() && worldsEntries()[entryKey(v)];
+  if(ex){ loadDraftFrom(ex); toast('Loaded '+ex.name+'\'s saved bracket'); renderWorlds(); }
+}
+function wPick(round, i, id){
+  if(worldsLocked()) return toast('Brackets are locked — the quarterfinals have started');
+  const d = worldsDraft;
+  if(round==='qf') d.qf[i] = id; else if(round==='sf') d.sf[i] = id; else d.champ = id;
+  [0,1].forEach(j=>{ if(d.sf[j] && d.sf[j]!==d.qf[2*j] && d.sf[j]!==d.qf[2*j+1]) d.sf[j] = null; });   // keep later rounds consistent
+  if(d.champ && !d.sf.includes(d.champ)) d.champ = null;
+  renderWorlds();
+}
+function saveBracket(){
+  if(!worlds || worldsLocked()) return toast('Brackets are locked — the quarterfinals have started');
+  const name = String(($('wName')||{}).value || worldsDraft.name || '').trim().slice(0,40);
+  const d = worldsDraft;
+  if(!name) return toast('Add your name');
+  if(d.qf.some(x=>!x) || d.sf.some(x=>!x) || !d.champ) return toast('Pick a winner for every match first');
+  if(!d.score) return toast('Pick the final\'s score — it breaks ties');
+  d.name = name;
+  try{ localStorage.setItem('prophouse.name', name); }catch(e){}
+  groupRef.child('worlds/'+worlds.tid+'/picks/'+entryKey(name))
+    .set({name, picks:{qf:d.qf, sf:d.sf, champ:d.champ, score:d.score}, updatedAt: firebase.database.ServerValue.TIMESTAMP})
+    .then(()=>toast('Bracket saved — you can change it until the first quarterfinal starts'))
+    .catch(e=>toast('Couldn\'t save — '+e.message));
+}
+function teamBtn(t, opts){
+  // opts: {onclick, picked, cls, score, disabled}
+  if(!t) return `<button class="bt tbd" disabled><span class="ph"></span><span class="nm">${esc(opts.label||'TBD')}</span></button>`;
+  return `<button class="bt ${opts.cls||''} ${opts.picked?'picked':''}" ${opts.onclick && !opts.disabled ? `onclick="${opts.onclick}"` : 'disabled'} title="${esc(t.name)}">`
+    + (t.image ? `<img src="${esc(t.image)}" alt="" loading="lazy">` : '<span class="ph"></span>')
+    + `<span class="nm">${esc(t.name || t.code)}</span>${opts.score!==undefined && opts.score!==null ? `<span class="sc">${opts.score}</span>` : ''}</button>`;
+}
+function renderBracketEdit(){
+  const ms = worlds.matches, d = worldsDraft;
+  const team = id => { for(const m of ms) for(const t of m.teams) if(t && t.id===id) return t; return null; };
+  const card = (m, slots, round, i, labels) => `<div class="bm"><div class="when">${fmtWhen(m.at)} · Bo5</div>${slots.map((t,k)=>teamBtn(t, {label: labels[k], picked: t && (round==='qf' ? d.qf[i] : round==='sf' ? d.sf[i] : d.champ)===t.id, onclick: t ? `wPick('${round}',${i},'${t.id}')` : null, disabled: slots.some(x=>!x)})).join('')}</div>`;
+  const qf = ms.slice(0,4).map((m,i)=>card(m, m.teams, 'qf', i, ['TBD','TBD']));
+  const sf = ms.slice(4,6).map((m,j)=>card(m, [team(d.qf[2*j]), team(d.qf[2*j+1])], 'sf', j, ['Pick QF '+(2*j+1)+' winner', 'Pick QF '+(2*j+2)+' winner']));
+  const fin = card(ms[6], [team(d.sf[0]), team(d.sf[1])], 'final', 0, ['Pick SF 1 winner', 'Pick SF 2 winner']);
+  return `<div class="bracket"><div class="round qf"><h4>Quarterfinals</h4><div class="slots">${qf.join('')}</div></div>
+    <div class="round sf"><h4>Semifinals</h4><div class="slots">${sf.join('')}</div></div>
+    <div class="round fin"><h4>Final · champion</h4><div class="slots">${fin}</div></div></div>`;
+}
+function renderBracketResults(){
+  const ms = worlds.matches, res = bracketResults(worlds);
+  const fromLabel = (m, k) => m.round==='sf' ? 'Winner of QF '+(2*(ms.indexOf(m)-4)+k+1) : m.round==='final' ? 'Winner of SF '+(k+1) : 'TBD';
+  const card = m => `<div class="bm"><div class="when">${fmtWhen(m.at)}${m.state==='inProgress' ? ' · <b style="color:var(--less)">LIVE</b>' : ''}</div>${[0,1].map(k=>{
+    const t = m.teams[k];
+    return teamBtn(t, {label: fromLabel(m,k), score: t && m.state!=='unstarted' ? t.wins : null, cls: t && m.state==='completed' ? (t.outcome==='win' ? 'won' : 'lost') : '', disabled: true});
+  }).join('')}</div>`;
+  return `<div class="bracket"><div class="round qf"><h4>Quarterfinals</h4><div class="slots">${ms.slice(0,4).map(card).join('')}</div></div>
+    <div class="round sf"><h4>Semifinals</h4><div class="slots">${ms.slice(4,6).map(card).join('')}</div></div>
+    <div class="round fin"><h4>Final${res.champ ? ' · champion' : ''}</h4><div class="slots">${card(ms[6])}</div></div></div>`;
+}
+function toggleWorldsRow(i){ const r = worldsStandings()[i]; if(!r) return; worldsOpenRow = worldsOpenRow===r.k ? null : r.k; renderWorlds(); }
+function renderWorlds(){
+  const el = $('worldsBody'); if(!el) return;
+  if(!worlds){
+    el.innerHTML = worldsErr
+      ? `<div class="w-card"><h3>Couldn't load Worlds</h3><div class="w-muted">${esc(worldsErr)}</div><div class="w-save"><button class="btn btn-ghost" onclick="refreshWorlds()">Try again</button></div></div>`
+      : '<div class="empty">Loading Worlds…</div>';
+    return;
+  }
+  const locked = worldsLocked(), res = bracketResults(worlds), entries = worldsEntries(), n = Object.keys(entries).length;
+  const pill = res.champ ? '<span class="w-pill done">Final</span>' : locked ? '<span class="w-pill live">Locked · live</span>' : worlds.drawn ? '<span class="w-pill">Open</span>' : '<span class="w-pill">Opens after Swiss</span>';
+  const hero = `<div class="w-hero"><div><h2>${esc(worlds.name)} Bracket</h2><p>Pick the knockout stage. ${BRACKET_PTS.qf} pts per quarterfinal winner, ${BRACKET_PTS.sf} per finalist, ${BRACKET_PTS.champ} for the champion — the final's exact score breaks ties.</p></div>${pill}</div>`;
+  const stale = worldsErr ? `<div class="w-note">Couldn't refresh from lolesports.com just now (${esc(worldsErr)}) — showing the last results.</div>` : '';
+  const lockLine = worlds.lockAt ? `Picks lock when the first quarterfinal starts — <b>${fmtWhen(worlds.lockAt)}</b>.` : 'Picks lock when the first quarterfinal starts.';
+  const entrants = n ? `<div>${Object.values(entries).map(e=>`<span class="w-entrant"><span class="av">${esc((e.name||'?').charAt(0))}</span>${esc(e.name)}</span>`).join('')}</div>` : '<div class="w-muted">Nobody has entered yet.</div>';
+
+  if(!worlds.drawn){
+    const sw = worlds.swiss, pct = sw.total ? Math.round(sw.done/sw.total*100) : 0;
+    el.innerHTML = hero + `<div class="w-card"><h3>Brackets open after the Swiss stage</h3><div class="w-muted">The eight quarterfinalists come out of the Swiss stage. As soon as the quarterfinal draw is announced, the bracket appears here for everyone in your group to fill in. ${lockLine}</div>
+      ${sw.total ? `<div class="w-bar"><span style="width:${pct}%"></span></div><div class="w-note">Swiss stage: ${sw.done} of ${sw.total} matches played</div>` : ''}</div>` + stale;
+    return;
+  }
+  if(!locked){
+    const d = worldsDraft, done = d.qf.filter(Boolean).length + d.sf.filter(Boolean).length + (d.champ?1:0);
+    el.innerHTML = hero + `<div class="w-card"><div class="w-muted">${lockLine} Others' picks stay hidden until then.</div></div>`
+      + renderBracketEdit()
+      + `<div class="w-card" style="margin-top:14px"><h3>Save your bracket</h3>
+        <div class="w-save"><input id="wName" placeholder="Your name" maxlength="40" value="${esc(d.name||'')}" oninput="wName(this.value)" onchange="wName(this.value, true)">
+        <select id="wScore" onchange="worldsDraft.score=this.value" title="Tiebreaker: the final's score">
+          <option value="" ${!d.score?'selected':''}>Final score…</option>${['3-0','3-1','3-2'].map(x=>`<option value="${x}" ${d.score===x?'selected':''}>Champion wins ${x}</option>`).join('')}</select>
+        <button class="btn" onclick="saveBracket()">Save</button></div>
+        <div class="w-note">${done}/7 picks made. Save again anytime before the lock to change it — the newest save counts.</div></div>`
+      + `<div class="w-card"><h3>Entered (${n})</h3>${entrants}</div>` + stale;
+    return;
+  }
+  // locked: standings + the real bracket
+  const rows = worldsStandings();
+  const team = id => { for(const m of worlds.matches) for(const t of m.teams) if(t && t.id===id) return t; return null; };
+  const mark = (id, hit, gone) => { const t = team(id); const c = t ? (t.code||t.name) : '?'; return hit ? `<span class="ok">✔ ${esc(c)}</span>` : gone ? `<span class="no">✘ ${esc(c)}</span>` : `<span>${esc(c)}</span>`; };
+  const detail = r => { const p = r.e.picks||{};
+    return `<div class="w-detail">Quarterfinals: ${(p.qf||[]).map(id=>mark(id, res.qfWinners.has(id), res.eliminated.has(id) && !res.qfWinners.has(id))).join(' · ')}<br>
+      Finalists: ${(p.sf||[]).map(id=>mark(id, res.finalists.has(id), res.eliminated.has(id) && !res.finalists.has(id))).join(' · ')}<br>
+      Champion: ${p.champ ? mark(p.champ, res.champ===p.champ, res.eliminated.has(p.champ)) : '—'} <span class="tb">· final ${esc(p.score||'?')}${res.finalScore ? (r.tb ? ' ✔' : ' (was '+esc(res.finalScore)+')') : ''}</span>
+      ${r.late ? '<br><span class="no">Saved after the lock — doesn\'t count.</span>' : ''}</div>`; };
+  const board = rows.length ? rows.map((r,i)=>{ const champ = team((r.e.picks||{}).champ);
+    return `<div class="w-row ${r.late?'late':''}" onclick="toggleWorldsRow(${i})">
+      <span class="rk">${r.late ? '–' : i+1}</span>${champ && champ.image ? `<img src="${esc(champ.image)}" alt="" title="Champion pick: ${esc(champ.name)}">` : ''}
+      <span class="nm">${esc(r.e.name)}</span><span class="pts">${r.pts}</span><span class="mx">${res.champ ? 'final' : 'max '+r.max}</span></div>${worldsOpenRow===r.k ? detail(r) : ''}`; }).join('')
+    : '<div class="w-muted">Nobody entered a bracket before the lock.</div>';
+  el.innerHTML = hero + `<div class="w-card"><h3>${res.champ ? 'Final standings' : 'Standings'} <span class="w-muted" style="font-weight:400">· tap a name for their picks</span></h3>${board}</div>`
+    + renderBracketResults() + stale;
 }
 
 function renderAll(){ renderRoster(); renderStats(); renderSlip(); renderTickets(); renderSettle(); renderAutoStatus(); renderRosterTab(); renderLeaderboard(); }
