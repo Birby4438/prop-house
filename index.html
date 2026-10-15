@@ -1866,68 +1866,169 @@ function renderBracketResults(){
     <div class="round sf"><h4>Semifinals</h4><div class="slots">${ms.slice(4,6).map(card).join('')}</div></div>
     <div class="round fin"><h4>Final${res.champ ? ' · champion' : ''}</h4><div class="slots">${card(ms[6])}</div></div></div>`;
 }
-/* ---- Play-Ins: series-by-series picks ---- */
-const PI_PTS = {win:10, exact:5};
+/* ---- Play-Ins: a full double-elimination bracket ----
+   4 teams, 6 best-of-five series: two upper semifinals (day 1), the upper final and lower semifinal (day 2),
+   the lower final (day 3), the grand final (day 4, winner → Swiss). You can fill in the whole bracket at once:
+   your winners advance and your losers drop to the lower bracket. Each pick is its own server-stamped record and
+   counts only if it was saved before ITS series started — so a bracket busted by an upset can be repaired
+   series by series until each one starts. Picks are stored by bracket slot, so they hold even if the feed
+   lists the two day-2 series in the other order. */
+const PI_SLOTS = [
+  {k:'ub1', label:'Upper semifinal 1', pts:10},
+  {k:'ub2', label:'Upper semifinal 2', pts:10},
+  {k:'ubf', label:'Upper final', pts:10, from:[['W','ub1'],['W','ub2']], note:'loser drops to the lower final'},
+  {k:'lbs', label:'Lower semifinal', pts:10, from:[['L','ub1'],['L','ub2']], note:'loser is out'},
+  {k:'lbf', label:'Lower final', pts:15, from:[['L','ubf'],['W','lbs']], note:'loser is out'},
+  {k:'gf',  label:'Grand final', pts:20, from:[['W','ubf'],['W','lbf']], note:'winner goes to Swiss'},
+];
+const PI_EXACT = 5;
+const slotByKey = k => PI_SLOTS.find(x=>x.k===k);
 let worldsStage = null;   // 'playins' | 'knockouts' — defaults to whichever is happening
-const piLocked = m => m.state!=='unstarted' || (!!m.at && Date.now() >= m.at - 30e3);   // 30s grace so a pick can't land just after the start
-const seriesScore = m => { const w = m.teams.find(t=>t && t.outcome==='win'), l = m.teams.find(t=>t && t.outcome==='loss'); return w && l ? w.wins+'-'+l.wins : null; };
+const seriesScore = m => { const w = m && m.teams.find(t=>t && t.outcome==='win'), l = m && m.teams.find(t=>t && t.outcome==='loss'); return w && l ? w.wins+'-'+l.wins : null; };
+const loserOf = m => m && m.state==='completed' ? ((m.teams.find(t=>t && t.outcome==='loss'))||{}).id || null : null;
+// which feed series is which bracket slot. Day 1 = the two earliest. The day-2 pair is told apart by who's
+// in them once round 1 results land; until then the earlier one is assumed to be the upper final, and both
+// day-2 picks lock at the earlier start time so the guess can't be used to pick after a series begins.
+function piSlotMatches(){
+  const ms = worlds && worlds.playins;
+  if(!ms || ms.length!==6) return null;
+  const [a, b, d1, d2, lbf, gf] = ms.slice().sort((x,y)=>(x.at||0)-(y.at||0));
+  const win = [winnerOf(a), winnerOf(b)].filter(Boolean), lose = [loserOf(a), loserOf(b)].filter(Boolean);
+  const ids = m => m.teams.filter(Boolean).map(t=>t.id);
+  let ubf = d1, lbs = d2, confirmed = false;
+  if(ids(d2).some(id=>win.includes(id)) || ids(d1).some(id=>lose.includes(id))){ ubf = d2; lbs = d1; confirmed = true; }
+  else if(ids(d1).some(id=>win.includes(id)) || ids(d2).some(id=>lose.includes(id))) confirmed = true;
+  return {map:{ub1:a, ub2:b, ubf, lbs, lbf, gf}, confirmed, day2: [d1, d2]};
+}
+function piLockAt(k, M){
+  if((k==='ubf' || k==='lbs') && !M.confirmed) return Math.min(...M.day2.map(m=>m.at || Infinity));
+  return M.map[k].at || 0;
+}
+function piLocked(k, M){
+  const m = M.map[k];
+  if(m.state!=='unstarted') return true;
+  if((k==='ubf' || k==='lbs') && !M.confirmed && M.day2.some(x=>x.state!=='unstarted')) return true;
+  const at = piLockAt(k, M);
+  return !!at && at!==Infinity && Date.now() >= at - 30e3;   // 30s grace so a pick can't land just after the start
+}
+const piOnTime = (p, k, M) => !!p && typeof p.updatedAt==='number' && p.updatedAt < piLockAt(k, M);
 const piAll = () => (worlds && (worldsAll[worlds.tid]||{}).playins) || {};
-const piMine = () => { const n = (worldsDraft.name||'').trim(); return n ? (piAll()[entryKey(n)] || {}) : {}; };
-// a pick counts only if the server stamped it before its series started
-const piOnTime = (p, m) => !!p && typeof p.updatedAt==='number' && !!m.at && p.updatedAt < m.at;
+// someone's picks by slot (an earlier version saved round-1 picks under the feed's match id — still honoured)
+function piPicksOf(raw, M){
+  const out = {};
+  PI_SLOTS.forEach(s=>{ const p = raw && (raw[s.k] || (M.map[s.k] && raw[M.map[s.k].id])); if(p && p.team) out[s.k] = p; });
+  return out;
+}
+const piMine = M => { const n = (worldsDraft.name||'').trim(); return n ? piPicksOf(piAll()[entryKey(n)], M) : {}; };
+// the two teams in a slot: the real matchup once the feed has it, otherwise where your own picks send them
+function piSlotTeams(k, picks, M){
+  const m = M.map[k], s = slotByKey(k);
+  if(m.teams.length===2 && m.teams.every(Boolean)) return {teams: m.teams, real: true};
+  if(!s.from) return {teams: [null, null], real: false};
+  return {teams: s.from.map(([wl, src])=>piOutcome(wl, src, picks, M)), real: false};
+}
+function piOutcome(wl, src, picks, M){
+  const m = M.map[src];
+  if(m.state==='completed') return m.teams.find(t=>t && t.outcome===(wl==='W' ? 'win' : 'loss')) || null;
+  const {teams} = piSlotTeams(src, picks, M), p = picks[src];
+  if(!p || !teams.every(Boolean)) return null;
+  const picked = teams.find(t=>t.id===p.team);
+  if(!picked) return null;
+  return wl==='W' ? picked : teams.find(t=>t.id!==p.team);
+}
 function piStandings(){
-  return Object.entries(piAll()).map(([k, picks])=>{
+  const M = piSlotMatches(); if(!M) return [];
+  return Object.entries(piAll()).map(([k, raw])=>{
+    const picks = piPicksOf(raw, M);
     let pts = 0, correct = 0, exact = 0, made = 0, name = '';
-    worlds.playins.forEach(m=>{
-      const p = picks && picks[m.id]; if(!p) return;
+    PI_SLOTS.forEach(s=>{
+      const p = picks[s.k], m = M.map[s.k]; if(!p) return;
       name = p.name || name;
-      if(!piOnTime(p, m)) return;
+      if(!piOnTime(p, s.k, M)) return;
       made++;
       const w = winnerOf(m); if(!w) return;
-      if(p.team===w){ pts += PI_PTS.win; correct++; if(p.score && p.score===seriesScore(m)){ pts += PI_PTS.exact; exact++; } }
+      if(p.team===w){ pts += s.pts; correct++; if(p.score && p.score===seriesScore(m)){ pts += PI_EXACT; exact++; } }
     });
     return {k, name: name || k, pts, correct, exact, made};
   }).filter(r=>r.made).sort((a,b)=>(b.pts-a.pts) || (b.exact-a.exact) || a.name.localeCompare(b.name));
 }
-function piSave(mid, team, score){
-  const m = worlds && worlds.playins.find(x=>x.id===mid); if(!m) return;
-  if(piLocked(m)) return toast('That series has started — picks are locked');
+// the writes for picking `team` in slot k: the new pick, plus null for later unlocked picks it makes impossible
+function piCascade(k, team, before, M){
+  const cur = before[k];
+  const picks = {...before, [k]: {team, score: cur && cur.team===team ? (cur.score||'') : ''}};
+  const upd = {[k]: {team, score: picks[k].score}};
+  for(const s of PI_SLOTS){
+    if(s.k===k || !picks[s.k] || piLocked(s.k, M)) continue;
+    const {teams} = piSlotTeams(s.k, picks, M);
+    if(teams.every(Boolean) && !teams.some(t=>t.id===picks[s.k].team)){ delete picks[s.k]; upd[s.k] = null; }
+  }
+  return upd;
+}
+// save a pick, and clear later unlocked picks that your new pick makes impossible (e.g. a team you now have losing)
+function piPick(k, team){
+  const M = piSlotMatches(); if(!M) return;
+  if(piLocked(k, M)) return toast('That series has started — picks are locked');
   const name = String(worldsDraft.name||'').trim().slice(0,40);
   if(!name){ toast('Add your name first'); const el = $('piName'); if(el) el.focus(); return; }
   try{ localStorage.setItem('prophouse.name', name); }catch(e){}
-  groupRef.child('worlds/'+worlds.tid+'/playins/'+entryKey(name)+'/'+mid)
-    .set({name, team, score: score||'', updatedAt: firebase.database.ServerValue.TIMESTAMP})
+  const upd = piCascade(k, team, piMine(M), M);
+  upd[k] = {name, ...upd[k], updatedAt: firebase.database.ServerValue.TIMESTAMP};
+  const raw = piAll()[entryKey(name)] || {};
+  if(raw[M.map[k].id]) upd[M.map[k].id] = null;   // retire an old match-id record for this slot
+  groupRef.child('worlds/'+worlds.tid+'/playins/'+entryKey(name)).update(upd).catch(e=>toast('Couldn\'t save — '+e.message));
+}
+function piScore(k, score){
+  const M = piSlotMatches(); if(!M) return;
+  const cur = piMine(M)[k];
+  if(!cur) return toast('Pick a winner first');
+  if(piLocked(k, M)) return toast('That series has started — picks are locked');
+  const name = String(worldsDraft.name||'').trim().slice(0,40);
+  groupRef.child('worlds/'+worlds.tid+'/playins/'+entryKey(name)+'/'+k)
+    .set({name, team: cur.team, score: cur.score===score ? '' : score, updatedAt: firebase.database.ServerValue.TIMESTAMP})
     .catch(e=>toast('Couldn\'t save — '+e.message));
 }
-function piPick(mid, team){ const cur = piMine()[mid]; piSave(mid, team, cur && cur.team===team ? cur.score : ''); }
-function piScore(mid, score){ const cur = piMine()[mid]; if(!cur || !cur.team) return toast('Pick a winner first'); piSave(mid, cur.team, cur.score===score ? '' : score); }
 function setWorldsStage(st){ worldsStage = st; renderWorlds(); }
 function renderPlayins(){
-  const mine = piMine(), all = piAll(), rows = piStandings();
-  const total = worlds.playins.length, done = worlds.playins.filter(m=>m.state==='completed').length;
-  const name = esc(worldsDraft.name||'');
-  const cards = worlds.playins.map((m,i)=>{
-    const locked = piLocked(m), mp = mine[m.id], w = winnerOf(m), sc = seriesScore(m), last = i===total-1;
-    const ready = m.teams.length===2 && m.teams.every(Boolean);
-    const status = m.state==='completed' ? `Final · ${sc||''}` : m.state==='inProgress' ? '<b style="color:var(--less)">LIVE</b>' : locked ? 'Locked' : ready ? 'Open · locks at start' : 'Teams set by earlier results';
-    const btns = ready ? m.teams.map(t=>{
-      const picked = mp && mp.team===t.id && piOnTime(mp, m) || (mp && mp.team===t.id && !locked);
+  const M = piSlotMatches();
+  if(!M) return `<div class="w-card"><div class="w-muted">This year's Play-In format isn't the usual four-team bracket, so it can't be shown here.</div></div>`;
+  const mine = piMine(M), all = piAll(), rows = piStandings();
+  const done = worlds.playins.filter(m=>m.state==='completed').length;
+  const srcLabel = ([wl, src]) => (wl==='W' ? 'Winner' : 'Loser')+' of '+slotByKey(src).label.toLowerCase();
+  const card = s => {
+    const m = M.map[s.k], locked = piLocked(s.k, M), mp = mine[s.k], w = winnerOf(m), sc = seriesScore(m);
+    const {teams, real} = piSlotTeams(s.k, mine, M);
+    const ready = teams.every(Boolean);
+    const lockTxt = (s.k==='ubf' || s.k==='lbs') && !M.confirmed ? 'locks at the first day-2 series' : 'locks at start';
+    const status = m.state==='completed' ? 'Final · '+(sc||'') : m.state==='inProgress' ? '<b style="color:var(--less)">LIVE</b>' : locked ? 'Locked' : ready ? 'Open · '+lockTxt : 'Waiting on earlier picks';
+    const busted = mp && real && !teams.some(t=>t && t.id===mp.team);
+    const btns = teams.map((t,i)=>{
+      if(!t) return teamBtn(null, {label: s.from ? srcLabel(s.from[i]) : 'TBD'});
+      const picked = mp && mp.team===t.id;
       const cls = m.state==='completed' ? (t.id===w ? 'won' : 'lost') : '';
-      const mark = picked && w ? (t.id===w ? 'right' : 'wrong') : '';
-      return teamBtn(t, {cls: cls+' '+mark, picked: picked && !mark, score: m.state!=='unstarted' ? t.wins : null, onclick: `piPick('${m.id}','${t.id}')`, disabled: locked});
-    }).join('') : [0,1].map(()=>teamBtn(null, {label:'TBD'})).join('');
-    const scoreRow = ready && !locked && mp && mp.team ? `<div class="pi-scores">${['3-0','3-1','3-2'].map(x=>`<button class="pi-sc ${mp.score===x?'on':''}" onclick="piScore('${m.id}','${x}')">${x}</button>`).join('')}<span class="w-note" style="margin:0 0 0 4px">exact score +${PI_PTS.exact}</span></div>` : '';
-    const others = Object.values(all).map(p=>p && p[m.id]).filter(p=>p && piOnTime(p, m));
-    const reveal = locked && others.length ? `<div class="w-note">${others.map(p=>{ const t = m.teams.find(x=>x && x.id===p.team); return esc(p.name)+' → '+esc(t ? t.code : '?')+(p.score?' '+esc(p.score):''); }).join(' · ')}</div>`
+      const mark = picked && w ? (t.id===w && piOnTime(mp, s.k, M) ? 'right' : 'wrong') : '';
+      return teamBtn(t, {cls: cls+' '+mark, picked: picked && !mark, score: m.state!=='unstarted' ? t.wins : null, onclick: `piPick('${s.k}','${t.id}')`, disabled: locked || !ready});
+    }).join('');
+    const scoreRow = ready && !locked && mp && !busted ? `<div class="pi-scores">${['3-0','3-1','3-2'].map(x=>`<button class="pi-sc ${mp.score===x?'on':''}" onclick="piScore('${s.k}','${x}')">${x}</button>`).join('')}<span class="w-note" style="margin:0 0 0 4px">exact score +${PI_EXACT}</span></div>` : '';
+    const others = Object.values(all).map(raw=>piPicksOf(raw, M)[s.k]).filter(p=>p && piOnTime(p, s.k, M));
+    const teamCode = id => { const t = [...M.map.ub1.teams, ...M.map.ub2.teams].find(x=>x && x.id===id); return t ? t.code : '?'; };
+    const reveal = locked && others.length ? `<div class="w-note">${others.map(p=>esc(p.name)+' → '+esc(teamCode(p.team))+(p.score?' '+esc(p.score):'')).join(' · ')}</div>`
       : !locked && others.length ? `<div class="w-note">${others.length} pick${others.length>1?'s':''} in — revealed when it starts</div>` : '';
-    const late = mp && locked && !piOnTime(mp, m) ? '<div class="w-note" style="color:var(--less)">Your pick was saved after this series started — it doesn\'t count.</div>' : '';
-    return `<div class="bm"><div class="when">${fmtWhen(m.at)} · Bo5 · ${status}${last ? ' · <b>winner goes to Swiss</b>' : ''}</div>${btns}${scoreRow}${reveal}${late}</div>`;
-  }).join('');
+    const notes = [
+      !real && ready ? '<div class="w-note">Matchup from your picks — the real one fills in as results come in.</div>' : '',
+      busted && !locked ? `<div class="w-note" style="color:var(--less)">Your pick (${esc(teamCode(mp.team))}) didn't make it to this series — pick again before it starts.</div>` : '',
+      mp && locked && !piOnTime(mp, s.k, M) ? '<div class="w-note" style="color:var(--less)">Your pick was saved after this series started — it doesn\'t count.</div>' : '',
+    ].join('');
+    return `<div class="bm"><div class="when"><b style="color:var(--ink)">${s.label}</b> · ${s.pts} pts · ${fmtWhen(m.at)} · ${status}${s.note ? ' · '+s.note : ''}</div>${btns}${scoreRow}${reveal}${notes}</div>`;
+  };
+  const made = PI_SLOTS.filter(s=>mine[s.k]).length;
   const board = rows.length ? rows.map((r,i)=>`<div class="w-row" style="cursor:default"><span class="rk">${i+1}</span><span class="nm">${esc(r.name)}</span><span class="mx">${r.correct}/${r.made} right${r.exact ? ' · '+r.exact+' exact' : ''}</span><span class="pts">${r.pts}</span></div>`).join('')
     : '<div class="w-muted">No picks have locked in yet.</div>';
-  return `<div class="w-hero"><div><h2>${esc(worlds.name)} Play-Ins</h2><p>Pick each series before it starts — ${PI_PTS.win} pts for the winner, +${PI_PTS.exact} for the exact score. Picks lock at the start of each series; everyone's picks show once it starts.</p></div>${done===total && total ? '<span class="w-pill done">Final</span>' : '<span class="w-pill live">'+done+'/'+total+' played</span>'}</div>
-    <div class="w-card"><div class="w-save" style="margin-top:0"><input id="piName" placeholder="Your name — picks save as you tap" maxlength="40" value="${name}" oninput="worldsDraft.name=this.value" onchange="worldsDraft.name=this.value.trim(); try{localStorage.setItem('prophouse.name', worldsDraft.name)}catch(e){}; renderWorlds()"></div></div>
-    <div class="pi-list">${cards}</div>
+  return `<div class="w-hero"><div><h2>${esc(worlds.name)} Play-Ins</h2><p>Fill in the whole double-elimination bracket — your winners move up, your losers drop to the lower bracket. Each pick locks when its own series starts, so you can fix a busted bracket until then. Upper/lower series ${PI_SLOTS[0].pts} pts, lower final ${slotByKey('lbf').pts}, grand final ${slotByKey('gf').pts}; +${PI_EXACT} for an exact score.</p></div>${done===6 ? '<span class="w-pill done">Final</span>' : '<span class="w-pill live">'+done+'/6 played</span>'}</div>
+    <div class="w-card"><div class="w-save" style="margin-top:0"><input id="piName" placeholder="Your name — picks save as you tap" maxlength="40" value="${esc(worldsDraft.name||'')}" oninput="worldsDraft.name=this.value" onchange="worldsDraft.name=this.value.trim(); try{localStorage.setItem('prophouse.name', worldsDraft.name)}catch(e){}; renderWorlds()"></div>
+      <div class="w-note">${made}/6 picks made.</div></div>
+    <div class="round"><h4>Upper bracket</h4><div class="pi-list">${['ub1','ub2','ubf'].map(k=>card(slotByKey(k))).join('')}</div></div>
+    <div class="round" style="margin-top:14px"><h4>Lower bracket</h4><div class="pi-list">${['lbs','lbf'].map(k=>card(slotByKey(k))).join('')}</div></div>
+    <div class="round" style="margin-top:14px"><h4>Grand final → Swiss</h4><div class="pi-list">${card(slotByKey('gf'))}</div></div>
     <div class="w-card" style="margin-top:14px"><h3>Play-In standings</h3>${board}</div>`;
 }
 function toggleWorldsRow(i){ const r = worldsStandings()[i]; if(!r) return; worldsOpenRow = worldsOpenRow===r.k ? null : r.k; renderWorlds(); }
